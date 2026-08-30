@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	ormbuilder "github.com/domainry/domainry-orm/builder"
+	ormbuilder "github.com/domainry/domainry-orm/query"
 )
 
 func (s DefinitionStore) CountDefinitionVersionsWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, resourceKey string) (int, error) {

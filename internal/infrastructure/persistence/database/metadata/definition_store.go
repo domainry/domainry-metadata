@@ -12,7 +12,7 @@ import (
 
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	ormbuilder "github.com/domainry/domainry-orm/builder"
+	ormbuilder "github.com/domainry/domainry-orm/query"
 )
 
 type DefinitionStore struct {

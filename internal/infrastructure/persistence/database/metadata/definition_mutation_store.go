@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	ormbuilder "github.com/domainry/domainry-orm/builder"
+	ormbuilder "github.com/domainry/domainry-orm/query"
 )
 
 func definitionTableForResourceType(resourceType string) (string, error) {
