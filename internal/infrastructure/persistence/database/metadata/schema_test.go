@@ -1,4 +1,4 @@
-package persistence
+package metadata
 
 import (
 	"database/sql"

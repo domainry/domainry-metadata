@@ -8,7 +8,7 @@ import (
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	metadatapersistence "github.com/domainry/domainry-metadata/internal/persistence"
+	metadatapersistence "github.com/domainry/domainry-metadata/internal/infrastructure/persistence/database/metadata"
 )
 
 type Factory struct{}
