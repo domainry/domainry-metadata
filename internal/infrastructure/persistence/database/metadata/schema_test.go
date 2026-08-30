@@ -32,7 +32,7 @@ func TestMetadataMigrationOwnsDefinitionCatalog(t *testing.T) {
 		}
 	}
 	var versionTableCount int
-	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='metadata_definition_versions'`).Scan(&versionTableCount); err != nil || versionTableCount != 1 {
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='_metadata_definition_versions'`).Scan(&versionTableCount); err != nil || versionTableCount != 1 {
 		t.Fatalf("version table count=%d err=%v", versionTableCount, err)
 	}
 	for _, table := range DefinitionTables() {
@@ -86,7 +86,7 @@ func TestDefinitionStoreSynchronizesAndReadsOwnedSnapshot(t *testing.T) {
 		t.Fatalf("snapshot=%#v", snapshot)
 	}
 	var disabled int
-	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM field_definitions WHERE disabled_at IS NOT NULL`).Scan(&disabled); err != nil || disabled != 1 {
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _metadata_field_definitions WHERE disabled_at IS NOT NULL`).Scan(&disabled); err != nil || disabled != 1 {
 		t.Fatalf("disabled=%d err=%v", disabled, err)
 	}
 }

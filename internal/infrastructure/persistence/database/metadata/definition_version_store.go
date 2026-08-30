@@ -9,7 +9,7 @@ import (
 )
 
 func (s DefinitionStore) CountDefinitionVersionsWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, resourceKey string) (int, error) {
-	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "metadata_definition_versions").Projections(ormbuilder.Project(ormbuilder.CountAll())).Where(ormbuilder.And(ormbuilder.Equal("resource_type", strings.TrimSpace(resourceType)), ormbuilder.Equal("resource_key", strings.TrimSpace(resourceKey)))).Build()
+	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Projections(ormbuilder.Project(ormbuilder.CountAll())).Where(ormbuilder.And(ormbuilder.Equal("resource_type", strings.TrimSpace(resourceType)), ormbuilder.Equal("resource_key", strings.TrimSpace(resourceKey)))).Build()
 	if err != nil {
 		return 0, err
 	}
@@ -27,7 +27,7 @@ func (s DefinitionStore) CountDefinitionVersionsWithExecutor(ctx context.Context
 
 func (s DefinitionStore) InsertDefinitionVersionWithExecutor(ctx context.Context, executor metadatarepository.ExecutionExecutor, value metadatarepository.DefinitionVersion) error {
 	id := strings.TrimSpace(value.ResourceType) + ":version:" + strings.TrimSpace(value.ResourceKey) + ":" + strings.TrimSpace(value.SchemaVersion) + ":" + shortHash(value.SchemaHash)
-	query, args, err := ormbuilder.NewInsertBuilder(s.dialect, "metadata_definition_versions").Columns("id", "resource_type", "resource_key", "schema_version", "schema_hash", "payload_json", "created_at").Values(id, value.ResourceType, value.ResourceKey, value.SchemaVersion, value.SchemaHash, value.Payload, value.CreatedAt).Build()
+	query, args, err := ormbuilder.NewInsertBuilder(s.dialect, "_metadata_definition_versions").Columns("id", "resource_type", "resource_key", "schema_version", "schema_hash", "payload_json", "created_at").Values(id, value.ResourceType, value.ResourceKey, value.SchemaVersion, value.SchemaHash, value.Payload, value.CreatedAt).Build()
 	if err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func (s DefinitionStore) InsertDefinitionVersionWithExecutor(ctx context.Context
 }
 
 func (s DefinitionStore) ListDefinitionVersionsWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, resourceKey string) ([]metadatarepository.DefinitionVersion, error) {
-	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "metadata_definition_versions").Columns("schema_version", "schema_hash", "payload_json", "created_at").Where(ormbuilder.And(ormbuilder.Equal("resource_type", resourceType), ormbuilder.Equal("resource_key", resourceKey))).OrderBy(ormbuilder.Descending("created_at")).Build()
+	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Columns("schema_version", "schema_hash", "payload_json", "created_at").Where(ormbuilder.And(ormbuilder.Equal("resource_type", resourceType), ormbuilder.Equal("resource_key", resourceKey))).OrderBy(ormbuilder.Descending("created_at")).Build()
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +59,7 @@ func (s DefinitionStore) ListDefinitionVersionsWithExecutor(ctx context.Context,
 }
 
 func (s DefinitionStore) GetDefinitionVersionWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, resourceKey, schemaVersion string) (metadatarepository.DefinitionVersion, bool, error) {
-	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "metadata_definition_versions").Columns("schema_hash", "payload_json", "created_at").Where(ormbuilder.And(ormbuilder.Equal("resource_type", resourceType), ormbuilder.Equal("resource_key", resourceKey), ormbuilder.Equal("schema_version", schemaVersion))).Build()
+	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Columns("schema_hash", "payload_json", "created_at").Where(ormbuilder.And(ormbuilder.Equal("resource_type", resourceType), ormbuilder.Equal("resource_key", resourceKey), ormbuilder.Equal("schema_version", schemaVersion))).Build()
 	if err != nil {
 		return metadatarepository.DefinitionVersion{}, false, err
 	}

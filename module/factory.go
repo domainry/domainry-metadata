@@ -14,7 +14,7 @@ import (
 type Factory struct{}
 
 func OwnedTables() []string {
-	return append(metadatapersistence.DefinitionTables(), "metadata_definition_versions")
+	return append(metadatapersistence.DefinitionTables(), "_metadata_definition_versions")
 }
 
 func SchemaMigrationsForDialect(dialect modulehost.Dialect) ([]modulehost.SchemaMigration, error) {

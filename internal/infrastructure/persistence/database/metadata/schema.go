@@ -9,13 +9,12 @@ import (
 )
 
 var definitionTables = []string{
-	"object_definitions",
-	"field_definitions",
-	"validation_definitions",
-	"action_definitions",
-	"dictionary_definitions",
-	"role_definitions",
-	"identity_profile_binding_definitions",
+	"_metadata_object_definitions",
+	"_metadata_field_definitions",
+	"_metadata_validation_definitions",
+	"_metadata_action_definitions",
+	"_metadata_dictionary_definitions",
+	"_metadata_role_definitions",
 }
 
 func SchemaMigrations(driver, schema string) ([]modulehost.SchemaMigration, error) {
@@ -39,14 +38,14 @@ func SchemaMigrationsForDialect(renderer modulehost.Dialect) ([]modulehost.Schem
 		}
 		statements = append(statements, statement)
 	}
-	versionTable, _, err := ormschema.NewTable(renderer, "metadata_definition_versions").IfNotExists().Columns(
+	versionTable, _, err := ormschema.NewTable(renderer, "_metadata_definition_versions").IfNotExists().Columns(
 		required("id", ormschema.TextKey(255)), required("resource_type", ormschema.TextKey(255)),
 		required("resource_key", ormschema.TextKey(255)), required("schema_version", ormschema.TextKey(255)),
 		required("schema_hash", ormschema.TextKey(255)), required("payload_json", ormschema.LongText()),
 		required("created_at", ormschema.TextKey(255)),
 	).PrimaryKey("id").Build()
 	if err != nil {
-		return nil, fmt.Errorf("build metadata_definition_versions: %w", err)
+		return nil, fmt.Errorf("build _metadata_definition_versions: %w", err)
 	}
 	return []modulehost.SchemaMigration{
 		{Version: 1, Name: "metadata_definition_catalog", Statements: statements},

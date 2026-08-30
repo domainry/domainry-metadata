@@ -25,9 +25,8 @@ func NewDefinitionStore(database modulehost.Database, dialect modulehost.Dialect
 }
 
 var definitionTableByResourceType = map[string]string{
-	"object": "object_definitions", "field": "field_definitions", "validation": "validation_definitions",
-	"action": "action_definitions", "dictionary": "dictionary_definitions", "role": "role_definitions",
-	"identity_profile_binding": "identity_profile_binding_definitions",
+	"object": "_metadata_object_definitions", "field": "_metadata_field_definitions", "validation": "_metadata_validation_definitions",
+	"action": "_metadata_action_definitions", "dictionary": "_metadata_dictionary_definitions", "role": "_metadata_role_definitions",
 }
 
 func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatarepository.Snapshot) error {
@@ -112,7 +111,7 @@ func (s DefinitionStore) DefinitionSnapshot(ctx context.Context) (metadatareposi
 
 func (s DefinitionStore) DefinitionSnapshotWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor) (metadatarepository.Snapshot, error) {
 	result := metadatarepository.Snapshot{Definitions: []metadatarepository.Definition{}}
-	for _, resourceType := range []string{"object", "field", "validation", "action", "dictionary", "role", "identity_profile_binding"} {
+	for _, resourceType := range []string{"object", "field", "validation", "action", "dictionary", "role"} {
 		table := definitionTableByResourceType[resourceType]
 		statement, args, buildErr := ormbuilder.NewSelectBuilder(s.dialect, table).Columns(
 			"resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id",
