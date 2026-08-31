@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	_ "modernc.org/sqlite"
@@ -59,6 +60,16 @@ func TestFactoryComposesLayeredModuleAndUsesHostMigrationRegistrar(t *testing.T)
 	}
 	if descriptor := binding.Descriptor(); descriptor.ProtocolVersion != metadatasdk.ProtocolVersionV1 || descriptor.Mode != "module" {
 		t.Fatalf("descriptor=%+v", descriptor)
+	}
+	if err := binding.Descriptor().Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if binding.Definitions() == nil || binding.Localization() == nil || binding.Dictionaries() == nil || binding.Projection() == nil {
+		t.Fatal("Metadata Binding business ports are incomplete")
+	}
+	provider, ok := binding.(interface{ HTTPSurfaces() []modulehttp.Surface })
+	if !ok || len(provider.HTTPSurfaces()) != 1 {
+		t.Fatal("Metadata Binding HTTP Surface is unavailable")
 	}
 	if err := binding.Close(t.Context()); err != nil {
 		t.Fatal(err)

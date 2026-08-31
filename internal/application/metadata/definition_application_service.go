@@ -3,22 +3,35 @@ package metadata
 import (
 	"context"
 
-	metadatamodel "github.com/domainry/domainry-metadata/internal/domain/metadata/model"
-	metadataservice "github.com/domainry/domainry-metadata/internal/domain/metadata/service"
+	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 )
 
-type DefinitionApplicationService struct {
-	domain *metadataservice.DefinitionService
+type definitionRepository interface {
+	metadatasdk.Definitions
+	SyncProjection(context.Context, metadatasdk.ProjectionSnapshot) error
 }
 
-func NewDefinitionApplicationService(domain *metadataservice.DefinitionService) *DefinitionApplicationService {
-	return &DefinitionApplicationService{domain: domain}
+type DefinitionApplicationService struct{ repository definitionRepository }
+
+func NewDefinitionApplicationService(repository definitionRepository) *DefinitionApplicationService {
+	return &DefinitionApplicationService{repository: repository}
 }
 
-func (s *DefinitionApplicationService) SyncDefinitions(ctx context.Context, snapshot metadatamodel.Snapshot) error {
-	return s.domain.Sync(ctx, snapshot)
+func (s *DefinitionApplicationService) List(ctx context.Context, query metadatasdk.DefinitionQuery) ([]metadatasdk.Definition, error) {
+	return s.repository.List(ctx, query)
 }
 
-func (s *DefinitionApplicationService) DefinitionSnapshot(ctx context.Context) (metadatamodel.Snapshot, error) {
-	return s.domain.Snapshot(ctx)
+func (s *DefinitionApplicationService) Get(ctx context.Context, resourceType, resourceKey string) (metadatasdk.Definition, bool, error) {
+	return s.repository.Get(ctx, resourceType, resourceKey)
 }
+
+func (s *DefinitionApplicationService) Snapshot(ctx context.Context) (metadatasdk.DefinitionSnapshot, error) {
+	return s.repository.Snapshot(ctx)
+}
+
+func (s *DefinitionApplicationService) Sync(ctx context.Context, snapshot metadatasdk.ProjectionSnapshot) error {
+	return s.repository.SyncProjection(ctx, snapshot)
+}
+
+var _ metadatasdk.Definitions = (*DefinitionApplicationService)(nil)
+var _ metadatasdk.Projection = (*DefinitionApplicationService)(nil)

@@ -5,37 +5,28 @@ package moduleassembly
 import (
 	"context"
 	"fmt"
-	"strings"
 
+	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
-	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 	metadatasdkadapter "github.com/domainry/domainry-metadata/internal/adapter/metadatasdk"
+	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
+	metadatadomain "github.com/domainry/domainry-metadata/internal/domain/metadata/service"
 	metadatastore "github.com/domainry/domainry-metadata/internal/infrastructure/persistence/database/metadata"
+	modulehttptransport "github.com/domainry/domainry-metadata/internal/transport/http/module"
 )
-
-type Database = modulehost.Database
-type Dialect = modulehost.Dialect
 
 type Factory struct{}
 
 func NewFactory() *Factory { return &Factory{} }
 
 func OwnedTables() []string {
-	return append(metadatastore.DefinitionTables(), "_metadata_definition_versions")
-}
-
-func SchemaMigrationsForDialect(dialect Dialect) ([]modulehost.SchemaMigration, error) {
-	return metadatastore.SchemaMigrationsForDialect(dialect)
-}
-
-func NewDefinitionRepository(database Database, dialect Dialect) metadatapersistence.DefinitionRepository {
-	return metadatastore.NewDefinitionStore(database, dialect)
+	return metadatastore.OwnedTables()
 }
 
 func (*Factory) OpenModule(ctx context.Context, application metadatasdk.ApplicationRef, host modulehost.Host) (metadatasdk.Binding, error) {
-	if strings.TrimSpace(application.InstallationID) == "" {
-		return nil, fmt.Errorf("Metadata installation identity is required")
+	if err := application.Validate(); err != nil {
+		return nil, err
 	}
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.Migrations() == nil {
 		return nil, fmt.Errorf("Metadata Module persistence host is incomplete")
@@ -48,5 +39,17 @@ func (*Factory) OpenModule(ctx context.Context, application metadatasdk.Applicat
 		return nil, fmt.Errorf("apply Metadata Module migrations: %w", err)
 	}
 	store := metadatastore.NewDefinitionStore(host.Database(), host.Dialect())
-	return metadatasdkadapter.NewBinding(store), nil
+	definitions := metadataapplication.NewDefinitionApplicationService(store)
+	localization := metadataapplication.NewLocalizationApplicationService(store, definitions)
+	dictionaries := metadatadomain.NewDictionaryService(definitions, localization)
+	binding := metadatasdkadapter.NewBinding(definitions, localization, dictionaries, definitions)
+	surface, err := modulehttptransport.NewSurface(binding)
+	if err != nil {
+		return nil, err
+	}
+	binding.SetHTTPSurfaces([]modulehttp.Surface{surface})
+	if err := binding.Descriptor().Validate(); err != nil {
+		return nil, err
+	}
+	return binding, nil
 }

@@ -2,88 +2,38 @@ package metadata
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
-	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
+	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	"github.com/domainry/domainry-orm/query"
 )
 
-func (s DefinitionStore) CountDefinitionVersionsWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor, resourceType, resourceKey string) (int, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Projections(query.Project(query.CountAll())).Where(query.And(query.Equal("resource_type", strings.TrimSpace(resourceType)), query.Equal("resource_key", strings.TrimSpace(resourceKey)))).Build()
-	if err != nil {
-		return 0, err
-	}
-	rows, err := executor.QueryContext(ctx, queryValue, args...)
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return 0, rows.Err()
-	}
-	var count int
-	return count, rows.Scan(&count)
+type definitionVersion struct {
+	ResourceType  string
+	ResourceKey   string
+	SchemaVersion string
+	SchemaHash    string
+	Payload       json.RawMessage
+	CreatedAt     string
 }
 
-func (s DefinitionStore) InsertDefinitionVersionWithExecutor(ctx context.Context, executor metadatapersistence.ExecutionExecutor, value metadatapersistence.DefinitionVersion) error {
-	id := strings.TrimSpace(value.ResourceType) + ":version:" + strings.TrimSpace(value.ResourceKey) + ":" + strings.TrimSpace(value.SchemaVersion) + ":" + shortHash(value.SchemaHash)
-	queryValue, args, err := query.NewInsertBuilder(s.dialect, "_metadata_definition_versions").Columns("id", "resource_type", "resource_key", "schema_version", "schema_hash", "payload_json", "created_at").Values(id, value.ResourceType, value.ResourceKey, value.SchemaVersion, value.SchemaHash, value.Payload, value.CreatedAt).Build()
+func (s DefinitionStore) insertDefinitionVersionIfMissing(ctx context.Context, executor modulehost.DBTX, value definitionVersion) error {
+	id := strings.TrimSpace(value.ResourceType) + ":version:" + strings.TrimSpace(value.ResourceKey) + ":" + strings.TrimSpace(value.SchemaVersion) + ":" + hashPrefix(value.SchemaHash)
+	statement, args, err := query.NewInsertBuilder(s.dialect, "_metadata_definition_versions").Columns(
+		"id", "resource_type", "resource_key", "schema_version", "schema_hash", "payload_json", "created_at",
+	).Values(id, value.ResourceType, value.ResourceKey, value.SchemaVersion, value.SchemaHash, value.Payload, value.CreatedAt).OnConflictDoNothing("id").Build()
 	if err != nil {
 		return err
 	}
-	_, err = executor.ExecContext(ctx, queryValue, args...)
+	_, err = executor.ExecContext(ctx, statement, args...)
 	return err
 }
 
-func (s DefinitionStore) ListDefinitionVersionsWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor, resourceType, resourceKey string) ([]metadatapersistence.DefinitionVersion, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Columns("schema_version", "schema_hash", "payload_json", "created_at").Where(query.And(query.Equal("resource_type", resourceType), query.Equal("resource_key", resourceKey))).OrderBy(query.Descending("created_at")).Build()
-	if err != nil {
-		return nil, err
-	}
-	rows, err := executor.QueryContext(ctx, queryValue, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	values := []metadatapersistence.DefinitionVersion{}
-	for rows.Next() {
-		value := metadatapersistence.DefinitionVersion{ResourceType: resourceType, ResourceKey: resourceKey}
-		var payload string
-		if err := rows.Scan(&value.SchemaVersion, &value.SchemaHash, &payload, &value.CreatedAt); err != nil {
-			return nil, err
-		}
-		value.Payload = []byte(payload)
-		values = append(values, value)
-	}
-	return values, rows.Err()
-}
-
-func (s DefinitionStore) GetDefinitionVersionWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor, resourceType, resourceKey, schemaVersion string) (metadatapersistence.DefinitionVersion, bool, error) {
-	queryValue, args, err := query.NewSelectBuilder(s.dialect, "_metadata_definition_versions").Columns("schema_hash", "payload_json", "created_at").Where(query.And(query.Equal("resource_type", resourceType), query.Equal("resource_key", resourceKey), query.Equal("schema_version", schemaVersion))).Build()
-	if err != nil {
-		return metadatapersistence.DefinitionVersion{}, false, err
-	}
-	rows, err := executor.QueryContext(ctx, queryValue, args...)
-	if err != nil {
-		return metadatapersistence.DefinitionVersion{}, false, err
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return metadatapersistence.DefinitionVersion{}, false, rows.Err()
-	}
-	value := metadatapersistence.DefinitionVersion{ResourceType: resourceType, ResourceKey: resourceKey, SchemaVersion: schemaVersion}
-	var payload string
-	if err := rows.Scan(&value.SchemaHash, &payload, &value.CreatedAt); err != nil {
-		return metadatapersistence.DefinitionVersion{}, false, err
-	}
-	value.Payload = []byte(payload)
-	return value, true, nil
-}
-
-func shortHash(value string) string {
+func hashPrefix(value string) string {
 	value = strings.TrimSpace(value)
-	if len(value) > 12 {
-		return value[:12]
+	if len(value) <= 12 {
+		return value
 	}
-	return value
+	return value[:12]
 }

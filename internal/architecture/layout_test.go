@@ -12,8 +12,6 @@ func TestMetadataUsesInternalLayeredLayout(t *testing.T) {
 	for _, required := range []string{
 		"cmd/metadata-server",
 		"internal/application/metadata",
-		"internal/domain/metadata/model",
-		"internal/domain/metadata/repository",
 		"internal/domain/metadata/service",
 		"internal/adapter/metadatasdk",
 		"internal/assembly/module",
