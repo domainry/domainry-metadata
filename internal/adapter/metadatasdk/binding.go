@@ -4,15 +4,14 @@ import (
 	"context"
 
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
-	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
+	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 )
 
 type Binding struct {
-	definitions metadatarepository.DefinitionRepository
+	definitions metadatapersistence.DefinitionRepository
 }
 
-func NewBinding(definitions *metadataapplication.DefinitionApplicationService) *Binding {
+func NewBinding(definitions metadatapersistence.DefinitionRepository) *Binding {
 	return &Binding{definitions: definitions}
 }
 
@@ -22,9 +21,9 @@ func (*Binding) Descriptor() metadatasdk.Descriptor {
 
 func (*Binding) Close(context.Context) error { return nil }
 
-func (b *Binding) DefinitionRepository() metadatarepository.DefinitionRepository {
+func (b *Binding) DefinitionRepository() metadatapersistence.DefinitionRepository {
 	return b.definitions
 }
 
 var _ metadatasdk.Binding = (*Binding)(nil)
-var _ metadatarepository.Binding = (*Binding)(nil)
+var _ metadatapersistence.Binding = (*Binding)(nil)

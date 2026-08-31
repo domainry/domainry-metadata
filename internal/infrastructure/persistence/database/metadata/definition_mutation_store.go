@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
+	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -18,28 +18,28 @@ func definitionTableForResourceType(resourceType string) (string, error) {
 	return table, nil
 }
 
-func (s DefinitionStore) GetDefinitionWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, key string) (metadatarepository.StoredDefinition, bool, error) {
+func (s DefinitionStore) GetDefinitionWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor, resourceType, key string) (metadatapersistence.StoredDefinition, bool, error) {
 	table, err := definitionTableForResourceType(resourceType)
 	if err != nil {
-		return metadatarepository.StoredDefinition{}, false, err
+		return metadatapersistence.StoredDefinition{}, false, err
 	}
 	queryValue, args, err := query.NewSelectBuilder(s.dialect, table).Columns("resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Where(query.Equal("resource_key", strings.TrimSpace(key))).Build()
 	if err != nil {
-		return metadatarepository.StoredDefinition{}, false, err
+		return metadatapersistence.StoredDefinition{}, false, err
 	}
 	rows, err := executor.QueryContext(ctx, queryValue, args...)
 	if err != nil {
-		return metadatarepository.StoredDefinition{}, false, err
+		return metadatapersistence.StoredDefinition{}, false, err
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		return metadatarepository.StoredDefinition{}, false, rows.Err()
+		return metadatapersistence.StoredDefinition{}, false, rows.Err()
 	}
 	value, err := scanStoredDefinition(rows, resourceType)
 	return value, err == nil, err
 }
 
-func (s DefinitionStore) ListDefinitionsWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor, resourceType, sourceID string) ([]metadatarepository.StoredDefinition, error) {
+func (s DefinitionStore) ListDefinitionsWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor, resourceType, sourceID string) ([]metadatapersistence.StoredDefinition, error) {
 	table, err := definitionTableForResourceType(resourceType)
 	if err != nil {
 		return nil, err
@@ -57,7 +57,7 @@ func (s DefinitionStore) ListDefinitionsWithExecutor(ctx context.Context, execut
 		return nil, err
 	}
 	defer rows.Close()
-	values := []metadatarepository.StoredDefinition{}
+	values := []metadatapersistence.StoredDefinition{}
 	for rows.Next() {
 		value, scanErr := scanStoredDefinition(rows, resourceType)
 		if scanErr != nil {
@@ -70,8 +70,8 @@ func (s DefinitionStore) ListDefinitionsWithExecutor(ctx context.Context, execut
 
 type rowScanner interface{ Scan(...any) error }
 
-func scanStoredDefinition(row rowScanner, resourceType string) (metadatarepository.StoredDefinition, error) {
-	value := metadatarepository.StoredDefinition{Definition: metadatarepository.Definition{ResourceType: strings.TrimSpace(resourceType)}}
+func scanStoredDefinition(row rowScanner, resourceType string) (metadatapersistence.StoredDefinition, error) {
+	value := metadatapersistence.StoredDefinition{Definition: metadatapersistence.Definition{ResourceType: strings.TrimSpace(resourceType)}}
 	var payload string
 	var disabled sql.NullString
 	err := row.Scan(&value.Key, &value.ObjectKey, &value.Name, &payload, &value.SchemaVersion, &value.SchemaHash, &value.SourceKind, &value.SourceID, &disabled, &value.CreatedAt, &value.UpdatedAt)
@@ -82,19 +82,19 @@ func scanStoredDefinition(row rowScanner, resourceType string) (metadatareposito
 	return value, err
 }
 
-func (s DefinitionStore) ReplaceDefinitionWithExecutor(ctx context.Context, executor metadatarepository.ExecutionExecutor, value metadatarepository.StoredDefinition, expectedHash *string) (metadatarepository.ReplaceResult, error) {
+func (s DefinitionStore) ReplaceDefinitionWithExecutor(ctx context.Context, executor metadatapersistence.ExecutionExecutor, value metadatapersistence.StoredDefinition, expectedHash *string) (metadatapersistence.ReplaceResult, error) {
 	table, err := definitionTableForResourceType(value.ResourceType)
 	if err != nil {
-		return metadatarepository.ReplaceResult{}, err
+		return metadatapersistence.ReplaceResult{}, err
 	}
 	key := strings.TrimSpace(value.Key)
 	if expectedHash != nil && strings.TrimSpace(*expectedHash) == "" {
 		current, found, lookupErr := s.GetDefinitionWithExecutor(ctx, executor, value.ResourceType, key)
 		if lookupErr != nil {
-			return metadatarepository.ReplaceResult{}, lookupErr
+			return metadatapersistence.ReplaceResult{}, lookupErr
 		}
 		if found {
-			return metadatarepository.ReplaceResult{CurrentHash: current.SchemaHash}, nil
+			return metadatapersistence.ReplaceResult{CurrentHash: current.SchemaHash}, nil
 		}
 		expectedHash = nil
 	}
@@ -104,40 +104,40 @@ func (s DefinitionStore) ReplaceDefinitionWithExecutor(ctx context.Context, exec
 	}
 	deleteQuery, deleteArgs, err := query.NewDeleteBuilder(s.dialect, table).Where(predicate).Build()
 	if err != nil {
-		return metadatarepository.ReplaceResult{}, err
+		return metadatapersistence.ReplaceResult{}, err
 	}
 	result, err := executor.ExecContext(ctx, deleteQuery, deleteArgs...)
 	if err != nil {
-		return metadatarepository.ReplaceResult{}, err
+		return metadatapersistence.ReplaceResult{}, err
 	}
 	if expectedHash != nil {
 		affected, rowsErr := result.RowsAffected()
 		if rowsErr != nil {
-			return metadatarepository.ReplaceResult{}, rowsErr
+			return metadatapersistence.ReplaceResult{}, rowsErr
 		}
 		if affected != 1 {
 			current, found, lookupErr := s.GetDefinitionWithExecutor(ctx, executor, value.ResourceType, key)
 			if lookupErr != nil {
-				return metadatarepository.ReplaceResult{}, lookupErr
+				return metadatapersistence.ReplaceResult{}, lookupErr
 			}
 			currentHash := ""
 			if found {
 				currentHash = current.SchemaHash
 			}
-			return metadatarepository.ReplaceResult{CurrentHash: currentHash}, nil
+			return metadatapersistence.ReplaceResult{CurrentHash: currentHash}, nil
 		}
 	}
 	insert, args, err := query.NewInsertBuilder(s.dialect, table).Columns("id", "resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Values(value.ResourceType+":"+key, key, value.ObjectKey, value.Name, value.Payload, value.SchemaVersion, value.SchemaHash, value.SourceKind, value.SourceID, nil, value.CreatedAt, value.UpdatedAt).Build()
 	if err != nil {
-		return metadatarepository.ReplaceResult{}, err
+		return metadatapersistence.ReplaceResult{}, err
 	}
 	if _, err := executor.ExecContext(ctx, insert, args...); err != nil {
-		return metadatarepository.ReplaceResult{}, err
+		return metadatapersistence.ReplaceResult{}, err
 	}
-	return metadatarepository.ReplaceResult{Replaced: true}, nil
+	return metadatapersistence.ReplaceResult{Replaced: true}, nil
 }
 
-func (s DefinitionStore) DisableDefinitionWithExecutor(ctx context.Context, executor metadatarepository.ExecutionExecutor, resourceType, key, disabledAt string, expectedHash *string) (bool, error) {
+func (s DefinitionStore) DisableDefinitionWithExecutor(ctx context.Context, executor metadatapersistence.ExecutionExecutor, resourceType, key, disabledAt string, expectedHash *string) (bool, error) {
 	table, err := definitionTableForResourceType(resourceType)
 	if err != nil {
 		return false, err
@@ -158,4 +158,4 @@ func (s DefinitionStore) DisableDefinitionWithExecutor(ctx context.Context, exec
 	return rows > 0, err
 }
 
-var _ metadatarepository.ExecutorDefinitionRepository = DefinitionStore{}
+var _ metadatapersistence.ExecutorDefinitionRepository = DefinitionStore{}

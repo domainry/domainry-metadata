@@ -3,7 +3,7 @@
 package module
 
 import (
-	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
+	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 	moduleassembly "github.com/domainry/domainry-metadata/internal/assembly/module"
 )
 
@@ -16,6 +16,6 @@ var SchemaMigrationsForDialect = moduleassembly.SchemaMigrationsForDialect
 
 // NewDefinitionRepository is retained for Runtime's transaction-aware schema
 // integration. The implementation remains owned by Metadata.
-func NewDefinitionRepository(database moduleassembly.Database, dialect moduleassembly.Dialect) metadatarepository.DefinitionRepository {
+func NewDefinitionRepository(database moduleassembly.Database, dialect moduleassembly.Dialect) metadatapersistence.DefinitionRepository {
 	return moduleassembly.NewDefinitionRepository(database, dialect)
 }

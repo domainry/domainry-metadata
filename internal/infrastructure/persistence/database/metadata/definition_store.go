@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
-	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
+	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 	"github.com/domainry/domainry-orm/query"
 )
 
@@ -29,7 +29,7 @@ var definitionTableByResourceType = map[string]string{
 	"action": "_metadata_action_definitions", "dictionary": "_metadata_dictionary_definitions", "role": "_metadata_role_definitions",
 }
 
-func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatarepository.Snapshot) error {
+func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatapersistence.Snapshot) error {
 	if s.database == nil || s.dialect == nil {
 		return fmt.Errorf("Metadata definition store is unavailable")
 	}
@@ -105,30 +105,30 @@ func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatar
 	return tx.Commit()
 }
 
-func (s DefinitionStore) DefinitionSnapshot(ctx context.Context) (metadatarepository.Snapshot, error) {
+func (s DefinitionStore) DefinitionSnapshot(ctx context.Context) (metadatapersistence.Snapshot, error) {
 	return s.DefinitionSnapshotWithExecutor(ctx, s.database)
 }
 
-func (s DefinitionStore) DefinitionSnapshotWithExecutor(ctx context.Context, executor metadatarepository.QueryExecutor) (metadatarepository.Snapshot, error) {
-	result := metadatarepository.Snapshot{Definitions: []metadatarepository.Definition{}}
+func (s DefinitionStore) DefinitionSnapshotWithExecutor(ctx context.Context, executor metadatapersistence.QueryExecutor) (metadatapersistence.Snapshot, error) {
+	result := metadatapersistence.Snapshot{Definitions: []metadatapersistence.Definition{}}
 	for _, resourceType := range []string{"object", "field", "validation", "action", "dictionary", "role"} {
 		table := definitionTableByResourceType[resourceType]
 		statement, args, buildErr := query.NewSelectBuilder(s.dialect, table).Columns(
 			"resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id",
 		).Where(query.IsNull("disabled_at")).OrderBy(query.Ascending("resource_key")).Build()
 		if buildErr != nil {
-			return metadatarepository.Snapshot{}, buildErr
+			return metadatapersistence.Snapshot{}, buildErr
 		}
 		rows, err := executor.QueryContext(ctx, statement, args...)
 		if err != nil {
-			return metadatarepository.Snapshot{}, err
+			return metadatapersistence.Snapshot{}, err
 		}
 		for rows.Next() {
-			value := metadatarepository.Definition{ResourceType: resourceType}
+			value := metadatapersistence.Definition{ResourceType: resourceType}
 			var version, sourceKind, sourceID, payload string
 			if err := rows.Scan(&value.Key, &value.ObjectKey, &value.Name, &payload, &version, &value.SchemaHash, &sourceKind, &sourceID); err != nil {
 				rows.Close()
-				return metadatarepository.Snapshot{}, err
+				return metadatapersistence.Snapshot{}, err
 			}
 			value.Payload = json.RawMessage(payload)
 			result.Definitions = append(result.Definitions, value)
@@ -138,12 +138,12 @@ func (s DefinitionStore) DefinitionSnapshotWithExecutor(ctx context.Context, exe
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return metadatarepository.Snapshot{}, err
+			return metadatapersistence.Snapshot{}, err
 		}
 		rows.Close()
 	}
 	return result, nil
 }
 
-var _ metadatarepository.DefinitionRepository = DefinitionStore{}
-var _ metadatarepository.ExecutorSnapshotRepository = DefinitionStore{}
+var _ metadatapersistence.DefinitionRepository = DefinitionStore{}
+var _ metadatapersistence.ExecutorSnapshotRepository = DefinitionStore{}

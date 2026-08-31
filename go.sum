@@ -1,5 +1,5 @@
-github.com/domainry/domainry-metadata-sdk v0.1.0 h1:xHnTwwVvkIh7SEhRnAUwzYuGN4seTtXKtmEbz3Q7bbk=
-github.com/domainry/domainry-metadata-sdk v0.1.0/go.mod h1:5UsehfM1lMTDu/YYi7Swc4rZ8PolMwSNQ/r1119PccI=
+github.com/domainry/domainry-metadata-sdk v0.1.1 h1:5y2hVGULEWlOmn6mF11ALtnnw+GWUTM+l6zb37LweKg=
+github.com/domainry/domainry-metadata-sdk v0.1.1/go.mod h1:5UsehfM1lMTDu/YYi7Swc4rZ8PolMwSNQ/r1119PccI=
 github.com/domainry/domainry-orm v0.1.29 h1:cJLNjxCDmqQfY3//5l25T51tbrPUw30cO3aandF5VCw=
 github.com/domainry/domainry-orm v0.1.29/go.mod h1:NKMojLuridkYCS4i5L7BO7LMTMsf/uOkWQ9OQ+9Vdn4=
 github.com/dustin/go-humanize v1.0.1 h1:GzkhY7T5VNhEkwH0PVJgjz+fX1rhBrR7pRT3mDkpeCY=

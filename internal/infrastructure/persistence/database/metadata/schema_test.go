@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
+	metadatapersistence "github.com/domainry/domainry-metadata-sdk/persistence"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	_ "modernc.org/sqlite"
@@ -65,7 +65,7 @@ func TestDefinitionStoreSynchronizesAndReadsOwnedSnapshot(t *testing.T) {
 	}
 	dialect, _ := ormdialect.New(ormdialect.SQLite)
 	store := NewDefinitionStore(database, dialect.WithSchema(""))
-	first := metadatarepository.Snapshot{SchemaVersion: "1", SourceKind: "manifest", SourceID: "app", Definitions: []metadatarepository.Definition{
+	first := metadatapersistence.Snapshot{SchemaVersion: "1", SourceKind: "manifest", SourceID: "app", Definitions: []metadatapersistence.Definition{
 		{ResourceType: "object", Key: "customer", ObjectKey: "customer", Name: "Customer", Payload: json.RawMessage(`{"key":"customer"}`)},
 		{ResourceType: "field", Key: "customer.name", ObjectKey: "customer", Name: "Name", Payload: json.RawMessage(`{"key":"name"}`)},
 	}}
@@ -110,7 +110,7 @@ func TestDefinitionStoreOwnsVersionHistory(t *testing.T) {
 	}
 	dialect, _ := ormdialect.New(ormdialect.SQLite)
 	store := NewDefinitionStore(database, dialect.WithSchema(""))
-	version := metadatarepository.DefinitionVersion{ResourceType: "object", ResourceKey: "customer", SchemaVersion: "1", SchemaHash: "abcdef1234567890", Payload: json.RawMessage(`{"key":"customer"}`), CreatedAt: "now"}
+	version := metadatapersistence.DefinitionVersion{ResourceType: "object", ResourceKey: "customer", SchemaVersion: "1", SchemaHash: "abcdef1234567890", Payload: json.RawMessage(`{"key":"customer"}`), CreatedAt: "now"}
 	if err := store.InsertDefinitionVersionWithExecutor(t.Context(), database, version); err != nil {
 		t.Fatal(err)
 	}
