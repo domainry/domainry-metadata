@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	ormbuilder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 )
 
 func definitionTableForResourceType(resourceType string) (string, error) {
@@ -23,11 +23,11 @@ func (s DefinitionStore) GetDefinitionWithExecutor(ctx context.Context, executor
 	if err != nil {
 		return metadatarepository.StoredDefinition{}, false, err
 	}
-	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, table).Columns("resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Where(ormbuilder.Equal("resource_key", strings.TrimSpace(key))).Build()
+	queryValue, args, err := query.NewSelectBuilder(s.dialect, table).Columns("resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Where(query.Equal("resource_key", strings.TrimSpace(key))).Build()
 	if err != nil {
 		return metadatarepository.StoredDefinition{}, false, err
 	}
-	rows, err := executor.QueryContext(ctx, query, args...)
+	rows, err := executor.QueryContext(ctx, queryValue, args...)
 	if err != nil {
 		return metadatarepository.StoredDefinition{}, false, err
 	}
@@ -44,15 +44,15 @@ func (s DefinitionStore) ListDefinitionsWithExecutor(ctx context.Context, execut
 	if err != nil {
 		return nil, err
 	}
-	predicates := []ormbuilder.Predicate{ormbuilder.IsNull("disabled_at")}
+	predicates := []query.Predicate{query.IsNull("disabled_at")}
 	if sourceID = strings.TrimSpace(sourceID); sourceID != "" {
-		predicates = append(predicates, ormbuilder.Equal("source_id", sourceID))
+		predicates = append(predicates, query.Equal("source_id", sourceID))
 	}
-	query, args, err := ormbuilder.NewSelectBuilder(s.dialect, table).Columns("resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Where(ormbuilder.And(predicates...)).OrderBy(ormbuilder.Ascending("resource_key")).Build()
+	queryValue, args, err := query.NewSelectBuilder(s.dialect, table).Columns("resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Where(query.And(predicates...)).OrderBy(query.Ascending("resource_key")).Build()
 	if err != nil {
 		return nil, err
 	}
-	rows, err := executor.QueryContext(ctx, query, args...)
+	rows, err := executor.QueryContext(ctx, queryValue, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -98,11 +98,11 @@ func (s DefinitionStore) ReplaceDefinitionWithExecutor(ctx context.Context, exec
 		}
 		expectedHash = nil
 	}
-	predicate := ormbuilder.Equal("resource_key", key)
+	predicate := query.Equal("resource_key", key)
 	if expectedHash != nil {
-		predicate = ormbuilder.And(predicate, ormbuilder.Equal("schema_hash", strings.TrimSpace(*expectedHash)))
+		predicate = query.And(predicate, query.Equal("schema_hash", strings.TrimSpace(*expectedHash)))
 	}
-	deleteQuery, deleteArgs, err := ormbuilder.NewDeleteBuilder(s.dialect, table).Where(predicate).Build()
+	deleteQuery, deleteArgs, err := query.NewDeleteBuilder(s.dialect, table).Where(predicate).Build()
 	if err != nil {
 		return metadatarepository.ReplaceResult{}, err
 	}
@@ -127,7 +127,7 @@ func (s DefinitionStore) ReplaceDefinitionWithExecutor(ctx context.Context, exec
 			return metadatarepository.ReplaceResult{CurrentHash: currentHash}, nil
 		}
 	}
-	insert, args, err := ormbuilder.NewInsertBuilder(s.dialect, table).Columns("id", "resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Values(value.ResourceType+":"+key, key, value.ObjectKey, value.Name, value.Payload, value.SchemaVersion, value.SchemaHash, value.SourceKind, value.SourceID, nil, value.CreatedAt, value.UpdatedAt).Build()
+	insert, args, err := query.NewInsertBuilder(s.dialect, table).Columns("id", "resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at").Values(value.ResourceType+":"+key, key, value.ObjectKey, value.Name, value.Payload, value.SchemaVersion, value.SchemaHash, value.SourceKind, value.SourceID, nil, value.CreatedAt, value.UpdatedAt).Build()
 	if err != nil {
 		return metadatarepository.ReplaceResult{}, err
 	}
@@ -142,15 +142,15 @@ func (s DefinitionStore) DisableDefinitionWithExecutor(ctx context.Context, exec
 	if err != nil {
 		return false, err
 	}
-	predicates := []ormbuilder.Predicate{ormbuilder.Equal("resource_key", strings.TrimSpace(key)), ormbuilder.IsNull("disabled_at")}
+	predicates := []query.Predicate{query.Equal("resource_key", strings.TrimSpace(key)), query.IsNull("disabled_at")}
 	if expectedHash != nil {
-		predicates = append(predicates, ormbuilder.Equal("schema_hash", strings.TrimSpace(*expectedHash)))
+		predicates = append(predicates, query.Equal("schema_hash", strings.TrimSpace(*expectedHash)))
 	}
-	query, args, err := ormbuilder.NewUpdateBuilder(s.dialect, table).Set("disabled_at", disabledAt).Set("updated_at", disabledAt).Where(ormbuilder.And(predicates...)).Build()
+	queryValue, args, err := query.NewUpdateBuilder(s.dialect, table).Set("disabled_at", disabledAt).Set("updated_at", disabledAt).Where(query.And(predicates...)).Build()
 	if err != nil {
 		return false, err
 	}
-	result, err := executor.ExecContext(ctx, query, args...)
+	result, err := executor.ExecContext(ctx, queryValue, args...)
 	if err != nil {
 		return false, err
 	}

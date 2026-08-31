@@ -1,4 +1,6 @@
-package module
+// Package moduleassembly composes the in-process Metadata module over the
+// database, SQL dialect and migration registrar supplied by its host.
+package moduleassembly
 
 import (
 	"context"
@@ -8,24 +10,30 @@ import (
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
+	metadatasdkadapter "github.com/domainry/domainry-metadata/internal/adapter/metadatasdk"
+	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
+	metadatadomain "github.com/domainry/domainry-metadata/internal/domain/metadata/service"
 	metadatapersistence "github.com/domainry/domainry-metadata/internal/infrastructure/persistence/database/metadata"
 )
 
+type Database = modulehost.Database
+type Dialect = modulehost.Dialect
+
 type Factory struct{}
+
+func NewFactory() *Factory { return &Factory{} }
 
 func OwnedTables() []string {
 	return append(metadatapersistence.DefinitionTables(), "_metadata_definition_versions")
 }
 
-func SchemaMigrationsForDialect(dialect modulehost.Dialect) ([]modulehost.SchemaMigration, error) {
+func SchemaMigrationsForDialect(dialect Dialect) ([]modulehost.SchemaMigration, error) {
 	return metadatapersistence.SchemaMigrationsForDialect(dialect)
 }
 
-func NewDefinitionRepository(database modulehost.Database, dialect modulehost.Dialect) metadatarepository.DefinitionRepository {
+func NewDefinitionRepository(database Database, dialect Dialect) metadatarepository.DefinitionRepository {
 	return metadatapersistence.NewDefinitionStore(database, dialect)
 }
-
-func NewFactory() *Factory { return &Factory{} }
 
 func (*Factory) OpenModule(ctx context.Context, application metadatasdk.ApplicationRef, host modulehost.Host) (metadatasdk.Binding, error) {
 	if strings.TrimSpace(application.InstallationID) == "" {
@@ -41,17 +49,8 @@ func (*Factory) OpenModule(ctx context.Context, application metadatasdk.Applicat
 	if err := host.Migrations().ApplyOwnedMigrations(ctx, "metadata", migrations); err != nil {
 		return nil, fmt.Errorf("apply Metadata Module migrations: %w", err)
 	}
-	return binding{definitions: metadatapersistence.NewDefinitionStore(host.Database(), host.Dialect())}, nil
+	store := metadatapersistence.NewDefinitionStore(host.Database(), host.Dialect())
+	domain := metadatadomain.NewDefinitionService(store)
+	applicationService := metadataapplication.NewDefinitionApplicationService(domain)
+	return metadatasdkadapter.NewBinding(applicationService), nil
 }
-
-type binding struct {
-	definitions metadatarepository.DefinitionRepository
-}
-
-func (binding) Descriptor() metadatasdk.Descriptor {
-	return metadatasdk.Descriptor{ProtocolVersion: metadatasdk.ProtocolVersionV1, Mode: "module"}
-}
-func (binding) Close(context.Context) error                                     { return nil }
-func (b binding) DefinitionRepository() metadatarepository.DefinitionRepository { return b.definitions }
-
-var _ metadatarepository.Binding = binding{}

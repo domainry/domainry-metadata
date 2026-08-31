@@ -12,7 +12,7 @@ import (
 
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	metadatarepository "github.com/domainry/domainry-metadata-sdk/repository"
-	ormbuilder "github.com/domainry/domainry-orm/query"
+	"github.com/domainry/domainry-orm/query"
 )
 
 type DefinitionStore struct {
@@ -43,8 +43,8 @@ func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatar
 	defer func() { _ = tx.Rollback() }()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	for _, table := range definitionTables {
-		statement, args, buildErr := ormbuilder.NewUpdateBuilder(s.dialect, table).Set("disabled_at", now).Set("updated_at", now).Where(ormbuilder.And(
-			ormbuilder.Equal("source_kind", snapshot.SourceKind), ormbuilder.Equal("source_id", snapshot.SourceID), ormbuilder.IsNull("disabled_at"),
+		statement, args, buildErr := query.NewUpdateBuilder(s.dialect, table).Set("disabled_at", now).Set("updated_at", now).Where(query.And(
+			query.Equal("source_kind", snapshot.SourceKind), query.Equal("source_id", snapshot.SourceID), query.IsNull("disabled_at"),
 		)).Build()
 		if buildErr != nil {
 			return buildErr
@@ -61,7 +61,7 @@ func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatar
 		}
 		sum := sha256.Sum256(definition.Payload)
 		hash := hex.EncodeToString(sum[:])
-		lookup, lookupArgs, buildErr := ormbuilder.NewSelectBuilder(s.dialect, table).Columns("source_kind", "source_id").Where(ormbuilder.Equal("resource_key", key)).Build()
+		lookup, lookupArgs, buildErr := query.NewSelectBuilder(s.dialect, table).Columns("source_kind", "source_id").Where(query.Equal("resource_key", key)).Build()
 		if buildErr != nil {
 			return buildErr
 		}
@@ -73,11 +73,11 @@ func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatar
 		if lookupErr == nil && (existingKind != snapshot.SourceKind || existingID != snapshot.SourceID) {
 			continue
 		}
-		update, args, buildErr := ormbuilder.NewUpdateBuilder(s.dialect, table).
+		update, args, buildErr := query.NewUpdateBuilder(s.dialect, table).
 			Set("object_key", strings.TrimSpace(definition.ObjectKey)).Set("name", strings.TrimSpace(definition.Name)).
 			Set("payload_json", definition.Payload).Set("schema_version", snapshot.SchemaVersion).Set("schema_hash", hash).
 			Set("source_kind", snapshot.SourceKind).Set("source_id", snapshot.SourceID).Set("disabled_at", nil).Set("updated_at", now).
-			Where(ormbuilder.Equal("resource_key", key)).Build()
+			Where(query.Equal("resource_key", key)).Build()
 		if buildErr != nil {
 			return buildErr
 		}
@@ -92,7 +92,7 @@ func (s DefinitionStore) SyncDefinitions(ctx context.Context, snapshot metadatar
 		if affected > 0 {
 			continue
 		}
-		statement, args, buildErr := ormbuilder.NewInsertBuilder(s.dialect, table).Columns(
+		statement, args, buildErr := query.NewInsertBuilder(s.dialect, table).Columns(
 			"id", "resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id", "disabled_at", "created_at", "updated_at",
 		).Values(definition.ResourceType+":"+key, key, strings.TrimSpace(definition.ObjectKey), strings.TrimSpace(definition.Name), definition.Payload, snapshot.SchemaVersion, hash, snapshot.SourceKind, snapshot.SourceID, nil, now, now).Build()
 		if buildErr != nil {
@@ -113,9 +113,9 @@ func (s DefinitionStore) DefinitionSnapshotWithExecutor(ctx context.Context, exe
 	result := metadatarepository.Snapshot{Definitions: []metadatarepository.Definition{}}
 	for _, resourceType := range []string{"object", "field", "validation", "action", "dictionary", "role"} {
 		table := definitionTableByResourceType[resourceType]
-		statement, args, buildErr := ormbuilder.NewSelectBuilder(s.dialect, table).Columns(
+		statement, args, buildErr := query.NewSelectBuilder(s.dialect, table).Columns(
 			"resource_key", "object_key", "name", "payload_json", "schema_version", "schema_hash", "source_kind", "source_id",
-		).Where(ormbuilder.IsNull("disabled_at")).OrderBy(ormbuilder.Ascending("resource_key")).Build()
+		).Where(query.IsNull("disabled_at")).OrderBy(query.Ascending("resource_key")).Build()
 		if buildErr != nil {
 			return metadatarepository.Snapshot{}, buildErr
 		}
