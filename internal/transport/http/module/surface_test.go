@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -24,9 +25,9 @@ func TestSurfaceDeclaresMetadataOwnedReadRoutes(t *testing.T) {
 	}
 	patterns := make([]string, 0, len(surface.Routes()))
 	for _, route := range surface.Routes() {
-		patterns = append(patterns, route.Pattern)
-		if route.Governance == nil || route.Governance.EffectClass != modulehttp.EffectRead || route.Governance.IdempotencyDecision != "not_applicable" {
-			t.Fatalf("route %q governance=%#v", route.Pattern, route.Governance)
+		patterns = append(patterns, route.Pattern())
+		if route.Action.EffectClass != actioncontract.EffectRead || route.Action.IdempotencyDecision != "not_applicable" {
+			t.Fatalf("route %q action=%#v", route.Pattern(), route.Action)
 		}
 	}
 	want := []string{

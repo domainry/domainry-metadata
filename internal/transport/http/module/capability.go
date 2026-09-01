@@ -15,7 +15,7 @@ func NewCapabilityBinding(validator modulecapability.Validator) (*modulecapabili
 	routes, operations := metadataRoutes(), metadataOpenAPIOperations()
 	groups := map[string][]modulehttp.Route{}
 	for _, route := range routes {
-		key := metadataCapabilityCategory(route.Pattern)
+		key := metadataCapabilityCategory(route.Pattern())
 		groups[key] = append(groups[key], route)
 	}
 	keys := []string{"metadata.definitions", "metadata.dictionaries", "metadata.localization"}

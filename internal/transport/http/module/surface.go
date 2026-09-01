@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -45,30 +46,34 @@ func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 }
 
 func metadataRoutes() []modulehttp.Route {
-	admin := func(pattern string) modulehttp.Route {
-		return modulehttp.Route{
-			Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposureTenantAdmin},
-			Authentication: modulehttp.AuthenticationAuthenticated, Permission: "workspace.admin",
-			Governance: metadataReadGovernance(),
-		}
+	admin := func(key, pattern, label string) modulehttp.Route {
+		method, path, _ := strings.Cut(pattern, " ")
+		separator := strings.LastIndex(key, ".")
+		return modulehttp.Route{Action: actioncontract.ActionDefinition{
+			Key: key, Owner: "module:metadata", SourceKind: "module_surface", CapabilityKey: "metadata.catalog", CapabilityLabel: "Metadata catalog",
+			OperationKey: key[separator+1:], OperationLabel: label, Label: label, Exposures: []actioncontract.Exposure{actioncontract.ExposureTenantAdmin},
+			Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission},
+			HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path}, Permission: &actioncontract.PermissionDefinition{
+				Key: key, Owner: "module:metadata", ResourceKey: key[:separator], ActionKey: key[separator+1:], Label: label, Category: "Metadata", LifecycleStatus: actioncontract.LifecycleActive,
+			},
+			EffectClass: actioncontract.EffectRead, RiskLevel: actioncontract.RiskLow, IdempotencyDecision: "not_applicable", AuditClass: "owner_read_audit_policy", LifecycleStatus: actioncontract.LifecycleActive,
+		}}
 	}
 	routes := []modulehttp.Route{
-		admin("GET /tenant-admin/metadata/definitions/{resourceType}"),
-		admin("GET /tenant-admin/metadata/definitions/{resourceType}/{resourceKey}"),
-		admin("GET /tenant-admin/metadata/localized-texts"),
-		admin("GET /tenant-admin/metadata/localized-texts/coverage"),
-		admin("GET /tenant-admin/metadata/localized-texts/export"),
-		admin("GET /tenant-admin/metadata/localized-texts/export.xlsx"),
-		{Pattern: "GET /dictionaries/{dictionaryKey}/items", Exposures: []modulehttp.Exposure{modulehttp.ExposurePublic, modulehttp.ExposureTenantAdmin}, Authentication: modulehttp.AuthenticationAuthenticated, PrincipalOnly: true, Governance: metadataReadGovernance()},
+		admin("metadata.definitions.list", "GET /tenant-admin/metadata/definitions/{resourceType}", "List metadata definitions"),
+		admin("metadata.definitions.get", "GET /tenant-admin/metadata/definitions/{resourceType}/{resourceKey}", "Get metadata definition"),
+		admin("metadata.localized_texts.list", "GET /tenant-admin/metadata/localized-texts", "List localized texts"),
+		admin("metadata.localized_texts.coverage", "GET /tenant-admin/metadata/localized-texts/coverage", "Read localization coverage"),
+		admin("metadata.localized_texts.export_csv", "GET /tenant-admin/metadata/localized-texts/export", "Export localized texts as CSV"),
+		admin("metadata.localized_texts.export_xlsx", "GET /tenant-admin/metadata/localized-texts/export.xlsx", "Export localized texts as XLSX"),
+		{Action: actioncontract.ActionDefinition{
+			Key: "metadata.dictionary_items.list", Owner: "module:metadata", SourceKind: "module_surface", CapabilityKey: "metadata.dictionaries", CapabilityLabel: "Metadata dictionaries",
+			OperationKey: "list", OperationLabel: "List dictionary items", Label: "List dictionary items", Exposures: []actioncontract.Exposure{actioncontract.ExposurePublic, actioncontract.ExposureTenantAdmin},
+			Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticatedPrincipal}, HTTP: &actioncontract.HTTPBinding{Method: "GET", RouteTemplate: "/dictionaries/{dictionaryKey}/items"},
+			EffectClass: actioncontract.EffectRead, RiskLevel: actioncontract.RiskLow, IdempotencyDecision: "not_applicable", AuditClass: "owner_read_audit_policy", LifecycleStatus: actioncontract.LifecycleActive,
+		}},
 	}
 	return routes
-}
-
-func metadataReadGovernance() *modulehttp.Governance {
-	return &modulehttp.Governance{
-		EffectClass: modulehttp.EffectRead, HighRiskPolicy: modulehttp.HighRiskNone,
-		IdempotencyDecision: "not_applicable", AuditClass: "owner_read_audit_policy",
-	}
 }
 
 type metadataHandler struct {
