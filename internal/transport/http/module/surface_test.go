@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -118,6 +119,7 @@ func TestSurfaceHandlersRejectMissingPrincipalBeforeCallingBusinessPorts(t *test
 }
 
 type testBinding struct {
+	modulecapability.Binding
 	definitions  metadatasdk.Definitions
 	localization metadatasdk.Localization
 	dictionaries metadatasdk.Dictionaries

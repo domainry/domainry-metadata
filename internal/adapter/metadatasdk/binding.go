@@ -2,7 +2,9 @@ package metadatasdkadapter
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 )
@@ -13,10 +15,24 @@ type Binding struct {
 	dictionaries metadatasdk.Dictionaries
 	projection   metadatasdk.Projection
 	surfaces     []modulehttp.Surface
+	capability   modulecapability.Binding
 }
 
-func NewBinding(definitions metadatasdk.Definitions, localization metadatasdk.Localization, dictionaries metadatasdk.Dictionaries, projection metadatasdk.Projection) *Binding {
-	return &Binding{definitions: definitions, localization: localization, dictionaries: dictionaries, projection: projection}
+func NewBinding(definitions metadatasdk.Definitions, localization metadatasdk.Localization, dictionaries metadatasdk.Dictionaries, projection metadatasdk.Projection, capability modulecapability.Binding) (*Binding, error) {
+	if capability == nil {
+		return nil, fmt.Errorf("Metadata capability binding is required")
+	}
+	return &Binding{definitions: definitions, localization: localization, dictionaries: dictionaries, projection: projection, capability: capability}, nil
+}
+
+func (b *Binding) CapabilitySummary(ctx context.Context) (modulecapability.ModuleSummary, error) {
+	return b.capability.CapabilitySummary(ctx)
+}
+func (b *Binding) CapabilityCategory(ctx context.Context, key string) (modulecapability.CategoryDocument, error) {
+	return b.capability.CapabilityCategory(ctx, key)
+}
+func (b *Binding) ValidateCapabilityCandidate(ctx context.Context, request modulecapability.ValidationRequest) (modulecapability.ValidationResult, error) {
+	return b.capability.ValidateCapabilityCandidate(ctx, request)
 }
 
 func (b *Binding) SetHTTPSurfaces(surfaces []modulehttp.Surface) {

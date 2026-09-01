@@ -9,6 +9,7 @@ import (
 	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
+	metadatacapability "github.com/domainry/domainry-metadata/capability"
 	metadatasdkadapter "github.com/domainry/domainry-metadata/internal/adapter/metadatasdk"
 	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
 	metadatadomain "github.com/domainry/domainry-metadata/internal/domain/metadata/service"
@@ -42,7 +43,14 @@ func (*Factory) OpenModule(ctx context.Context, application metadatasdk.Applicat
 	definitions := metadataapplication.NewDefinitionApplicationService(store)
 	localization := metadataapplication.NewLocalizationApplicationService(store, definitions)
 	dictionaries := metadatadomain.NewDictionaryService(definitions, localization)
-	binding := metadatasdkadapter.NewBinding(definitions, localization, dictionaries, definitions)
+	capability, err := metadatacapability.Open(metadatacapability.Inputs{})
+	if err != nil {
+		return nil, fmt.Errorf("build Metadata capability disclosure: %w", err)
+	}
+	binding, err := metadatasdkadapter.NewBinding(definitions, localization, dictionaries, definitions, capability)
+	if err != nil {
+		return nil, err
+	}
 	surface, err := modulehttptransport.NewSurface(binding)
 	if err != nil {
 		return nil, err

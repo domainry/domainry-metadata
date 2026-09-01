@@ -30,6 +30,9 @@ func (s *metadataSurface) Handler() http.Handler { return s.handler }
 func (s *metadataSurface) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
+func (*metadataSurface) OpenAPIOperations() map[string]map[string]any {
+	return metadataOpenAPIOperations()
+}
 
 func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 	if binding == nil || binding.Definitions() == nil || binding.Localization() == nil || binding.Dictionaries() == nil {
@@ -37,6 +40,11 @@ func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 	}
 	handler := &metadataHandler{definitions: binding.Definitions(), localization: binding.Localization(), dictionaries: binding.Dictionaries(), mux: http.NewServeMux()}
 	handler.register()
+	routes := metadataRoutes()
+	return &metadataSurface{handler: handler.mux, routes: routes}, nil
+}
+
+func metadataRoutes() []modulehttp.Route {
 	admin := func(pattern string) modulehttp.Route {
 		return modulehttp.Route{
 			Pattern: pattern, Exposures: []modulehttp.Exposure{modulehttp.ExposureTenantAdmin},
@@ -53,7 +61,7 @@ func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 		admin("GET /tenant-admin/metadata/localized-texts/export.xlsx"),
 		{Pattern: "GET /dictionaries/{dictionaryKey}/items", Exposures: []modulehttp.Exposure{modulehttp.ExposurePublic, modulehttp.ExposureTenantAdmin}, Authentication: modulehttp.AuthenticationAuthenticated, PrincipalOnly: true, Governance: metadataReadGovernance()},
 	}
-	return &metadataSurface{handler: handler.mux, routes: routes}, nil
+	return routes
 }
 
 func metadataReadGovernance() *modulehttp.Governance {
@@ -325,3 +333,4 @@ func spreadsheetColumn(index int) string {
 }
 
 var _ modulehttp.Surface = (*metadataSurface)(nil)
+var _ modulehttp.OpenAPIProvider = (*metadataSurface)(nil)
