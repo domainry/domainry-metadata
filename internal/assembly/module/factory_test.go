@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
@@ -70,6 +71,14 @@ func TestFactoryComposesLayeredModuleAndUsesHostMigrationRegistrar(t *testing.T)
 	provider, ok := binding.(interface{ HTTPSurfaces() []modulehttp.Surface })
 	if !ok || len(provider.HTTPSurfaces()) != 1 {
 		t.Fatal("Metadata Binding HTTP Surface is unavailable")
+	}
+	actionProvider, ok := binding.(actioncontract.Provider)
+	if !ok {
+		t.Fatal("Metadata Binding Action manifest is unavailable")
+	}
+	actions, err := actionProvider.AuthorizationActions()
+	if err != nil || len(actions) != 7 {
+		t.Fatalf("Metadata Actions=%d err=%v", len(actions), err)
 	}
 	if err := binding.Close(t.Context()); err != nil {
 		t.Fatal(err)

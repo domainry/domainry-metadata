@@ -51,7 +51,7 @@ func TestSurfaceUsesAuthenticatedWorkspaceForDefinitionsAndDictionaries(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	principal := identitysdk.Principal{ContractVersion: identitysdk.PrincipalContextContractVersion, Known: true, WorkspaceID: "workspace-a", UserID: "user-a"}
+	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
 
 	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object?workspace_id=workspace-a", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
@@ -79,7 +79,7 @@ func TestSurfaceRejectsCrossWorkspaceDefinitionRead(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	principal := identitysdk.Principal{ContractVersion: identitysdk.PrincipalContextContractVersion, Known: true, WorkspaceID: "workspace-a", UserID: "user-a"}
+	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
 	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object?workspace_id=workspace-b", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
@@ -116,6 +116,34 @@ func TestSurfaceHandlersRejectMissingPrincipalBeforeCallingBusinessPorts(t *test
 	}
 	if dictionaries.calls != 0 {
 		t.Fatalf("dictionary port called %d times", dictionaries.calls)
+	}
+}
+
+func TestSurfaceDoesNotAuthorizeListWithAnotherExactMetadataPermission(t *testing.T) {
+	definitions := &testDefinitions{}
+	surface, err := NewSurface(testBinding{definitions: definitions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{
+		Principal: metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsGet),
+	}))
+	response := httptest.NewRecorder()
+	surface.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
+	}
+}
+
+func metadataTestPrincipal(actionKey string) identitysdk.Principal {
+	separator := strings.LastIndex(actionKey, ".")
+	return identitysdk.Principal{
+		ContractVersion: identitysdk.PrincipalContextContractVersion,
+		Known:           true, WorkspaceID: "workspace-a", UserID: "user-a",
+		AccessBundle: &identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{
+			Resource: identitysdk.ResourceType(actionKey[:separator]), Action: identitysdk.Action(actionKey[separator+1:]), Effect: identitysdk.EffectAllow,
+		}}},
 	}
 }
 

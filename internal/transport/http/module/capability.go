@@ -12,13 +12,28 @@ import (
 )
 
 func NewCapabilityBinding(validator modulecapability.Validator) (*modulecapability.StaticBinding, error) {
-	routes, operations := metadataRoutes(), metadataOpenAPIOperations()
+	routes, err := metadataRoutes()
+	if err != nil {
+		return nil, err
+	}
 	groups := map[string][]modulehttp.Route{}
 	for _, route := range routes {
-		key := metadataCapabilityCategory(route.Pattern())
-		groups[key] = append(groups[key], route)
+		groups[route.Action.CapabilityKey] = append(groups[route.Action.CapabilityKey], route)
 	}
-	keys := []string{"metadata.definitions", "metadata.dictionaries", "metadata.localization"}
+	byAction := metadataOpenAPIOperationsByAction()
+	operations := make(map[string]map[string]any, len(routes))
+	for _, route := range routes {
+		operation, found := byAction[route.Action.Key]
+		if !found {
+			return nil, fmt.Errorf("Metadata Action %q has no OpenAPI operation", route.Action.Key)
+		}
+		operations[route.Pattern()] = operation
+		delete(byAction, route.Action.Key)
+	}
+	if len(byAction) != 0 {
+		return nil, fmt.Errorf("Metadata OpenAPI operations have no Action manifest entries")
+	}
+	keys := []string{metadatasdk.CapabilityMetadataDefinitions, metadatasdk.CapabilityMetadataDictionaries, metadatasdk.CapabilityMetadataLocalization}
 	documents := make([]modulecapability.CategoryDocument, 0, len(keys))
 	for _, key := range keys {
 		name, description, scopes := metadataCategoryMetadata(key)
@@ -30,7 +45,7 @@ func NewCapabilityBinding(validator modulecapability.Validator) (*modulecapabili
 		if err != nil {
 			return nil, err
 		}
-		if key == "metadata.dictionaries" {
+		if key == metadatasdk.CapabilityMetadataDictionaries {
 			document.ValidationContracts = []modulecapability.ValidationScopeContract{{Kind: "metadata.dictionary", Description: "Validate one source-owned metadata dictionary.", Coverage: modulecapability.ValidationCoverageAllCandidates, CandidateCollections: []string{"dictionaries"}}}
 		}
 		documents = append(documents, document)
@@ -51,22 +66,11 @@ func NewCapabilityBinding(validator modulecapability.Validator) (*modulecapabili
 	return modulecapability.NewStaticBinding(summary, documents, validator)
 }
 
-func metadataCapabilityCategory(pattern string) string {
-	_, path, _ := strings.Cut(pattern, " ")
-	if strings.HasPrefix(path, "/dictionaries/") {
-		return "metadata.dictionaries"
-	}
-	if strings.Contains(path, "/localized-texts") {
-		return "metadata.localization"
-	}
-	return "metadata.definitions"
-}
-
 func metadataCategoryMetadata(key string) (string, string, []string) {
 	switch key {
-	case "metadata.dictionaries":
+	case metadatasdk.CapabilityMetadataDictionaries:
 		return "Metadata dictionaries", "Resolve localized items from one projected source-owned dictionary.", []string{"metadata.dictionary"}
-	case "metadata.localization":
+	case metadatasdk.CapabilityMetadataLocalization:
 		return "Metadata localization", "List, measure coverage, and export projected localized text.", []string{}
 	default:
 		return "Metadata definitions", "List and inspect definitions projected from their semantic source owners.", []string{}

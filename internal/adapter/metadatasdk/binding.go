@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 
+	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
+	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
 )
 
 type Binding struct {
@@ -53,5 +55,10 @@ func (b *Binding) HTTPSurfaces() []modulehttp.Surface {
 	return append([]modulehttp.Surface(nil), b.surfaces...)
 }
 
+func (*Binding) AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
+	return metadataapplication.AuthorizationActions()
+}
+
 var _ metadatasdk.Binding = (*Binding)(nil)
 var _ modulehttp.Provider = (*Binding)(nil)
+var _ actioncontract.Provider = (*Binding)(nil)

@@ -11,17 +11,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
-	actioncontract "github.com/domainry/domainry-foundation/action"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
+	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
 )
 
 type metadataSurface struct {
-	handler http.Handler
-	routes  []modulehttp.Route
+	handler    http.Handler
+	routes     []modulehttp.Route
+	operations map[string]map[string]any
 }
 
 func (*metadataSurface) ContractVersion() string { return modulehttp.ContractVersion }
@@ -31,8 +33,8 @@ func (s *metadataSurface) Handler() http.Handler { return s.handler }
 func (s *metadataSurface) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
-func (*metadataSurface) OpenAPIOperations() map[string]map[string]any {
-	return metadataOpenAPIOperations()
+func (s *metadataSurface) OpenAPIOperations() map[string]map[string]any {
+	return s.operations
 }
 
 func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
@@ -40,40 +42,59 @@ func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 		return nil, errors.New("Metadata HTTP dependencies are incomplete")
 	}
 	handler := &metadataHandler{definitions: binding.Definitions(), localization: binding.Localization(), dictionaries: binding.Dictionaries(), mux: http.NewServeMux()}
-	handler.register()
-	routes := metadataRoutes()
-	return &metadataSurface{handler: handler.mux, routes: routes}, nil
+	routes, err := metadataRoutes()
+	if err != nil {
+		return nil, err
+	}
+	handlers := handler.handlers()
+	byAction := metadataOpenAPIOperationsByAction()
+	operations := make(map[string]map[string]any, len(routes))
+	for _, route := range routes {
+		key := strings.TrimSpace(route.Action.Key)
+		implementation, found := handlers[key]
+		if !found {
+			return nil, fmt.Errorf("Metadata Action %q has no HTTP handler", key)
+		}
+		operation, found := byAction[key]
+		if !found {
+			return nil, fmt.Errorf("Metadata Action %q has no OpenAPI operation", key)
+		}
+		handler.mux.HandleFunc(route.Pattern(), implementation)
+		operations[route.Pattern()] = operation
+		delete(handlers, key)
+		delete(byAction, key)
+	}
+	if len(handlers) != 0 || len(byAction) != 0 {
+		keys := make([]string, 0, len(handlers)+len(byAction))
+		for key := range handlers {
+			keys = append(keys, "handler:"+key)
+		}
+		for key := range byAction {
+			keys = append(keys, "openapi:"+key)
+		}
+		sort.Strings(keys)
+		return nil, fmt.Errorf("Metadata implementations have no Action manifest entries: %v", keys)
+	}
+	return &metadataSurface{handler: handler.mux, routes: routes, operations: operations}, nil
 }
 
-func metadataRoutes() []modulehttp.Route {
-	admin := func(key, pattern, label string) modulehttp.Route {
-		method, path, _ := strings.Cut(pattern, " ")
-		separator := strings.LastIndex(key, ".")
-		return modulehttp.Route{Action: actioncontract.ActionDefinition{
-			Key: key, Owner: "module:metadata", SourceKind: "module_surface", CapabilityKey: "metadata.catalog", CapabilityLabel: "Metadata catalog",
-			OperationKey: key[separator+1:], OperationLabel: label, Label: label, Exposures: []actioncontract.Exposure{actioncontract.ExposureTenantAdmin},
-			Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission},
-			HTTP:          &actioncontract.HTTPBinding{Method: method, RouteTemplate: path}, Permission: &actioncontract.PermissionDefinition{
-				Key: key, Owner: "module:metadata", ResourceKey: key[:separator], ActionKey: key[separator+1:], Label: label, Category: "Metadata", LifecycleStatus: actioncontract.LifecycleActive,
-			},
-			EffectClass: actioncontract.EffectRead, RiskLevel: actioncontract.RiskLow, IdempotencyDecision: "not_applicable", AuditClass: "owner_read_audit_policy", LifecycleStatus: actioncontract.LifecycleActive,
-		}}
+func metadataRoutes() ([]modulehttp.Route, error) {
+	definitions, err := metadataapplication.AuthorizationActions()
+	if err != nil {
+		return nil, err
 	}
-	routes := []modulehttp.Route{
-		admin("metadata.definitions.list", "GET /tenant-admin/metadata/definitions/{resourceType}", "List metadata definitions"),
-		admin("metadata.definitions.get", "GET /tenant-admin/metadata/definitions/{resourceType}/{resourceKey}", "Get metadata definition"),
-		admin("metadata.localized_texts.list", "GET /tenant-admin/metadata/localized-texts", "List localized texts"),
-		admin("metadata.localized_texts.coverage", "GET /tenant-admin/metadata/localized-texts/coverage", "Read localization coverage"),
-		admin("metadata.localized_texts.export_csv", "GET /tenant-admin/metadata/localized-texts/export", "Export localized texts as CSV"),
-		admin("metadata.localized_texts.export_xlsx", "GET /tenant-admin/metadata/localized-texts/export.xlsx", "Export localized texts as XLSX"),
-		{Action: actioncontract.ActionDefinition{
-			Key: "metadata.dictionary_items.list", Owner: "module:metadata", SourceKind: "module_surface", CapabilityKey: "metadata.dictionaries", CapabilityLabel: "Metadata dictionaries",
-			OperationKey: "list", OperationLabel: "List dictionary items", Label: "List dictionary items", Exposures: []actioncontract.Exposure{actioncontract.ExposurePublic, actioncontract.ExposureTenantAdmin},
-			Authorization: actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticatedPrincipal}, HTTP: &actioncontract.HTTPBinding{Method: "GET", RouteTemplate: "/dictionaries/{dictionaryKey}/items"},
-			EffectClass: actioncontract.EffectRead, RiskLevel: actioncontract.RiskLow, IdempotencyDecision: "not_applicable", AuditClass: "owner_read_audit_policy", LifecycleStatus: actioncontract.LifecycleActive,
-		}},
+	routes := make([]modulehttp.Route, 0, len(definitions))
+	for _, definition := range definitions {
+		if definition.HTTP == nil {
+			continue
+		}
+		route, err := modulehttp.RouteFromAction(definition)
+		if err != nil {
+			return nil, fmt.Errorf("project Metadata Action %q: %w", definition.Key, err)
+		}
+		routes = append(routes, route)
 	}
-	return routes
+	return routes, nil
 }
 
 type metadataHandler struct {
@@ -83,18 +104,20 @@ type metadataHandler struct {
 	mux          *http.ServeMux
 }
 
-func (h *metadataHandler) register() {
-	h.mux.HandleFunc("GET /tenant-admin/metadata/definitions/{resourceType}", h.listDefinitions)
-	h.mux.HandleFunc("GET /tenant-admin/metadata/definitions/{resourceType}/{resourceKey}", h.getDefinition)
-	h.mux.HandleFunc("GET /tenant-admin/metadata/localized-texts", h.listLocalizedTexts)
-	h.mux.HandleFunc("GET /tenant-admin/metadata/localized-texts/coverage", h.localizedTextCoverage)
-	h.mux.HandleFunc("GET /tenant-admin/metadata/localized-texts/export", h.exportLocalizedTextsCSV)
-	h.mux.HandleFunc("GET /tenant-admin/metadata/localized-texts/export.xlsx", h.exportLocalizedTextsXLSX)
-	h.mux.HandleFunc("GET /dictionaries/{dictionaryKey}/items", h.dictionaryItems)
+func (h *metadataHandler) handlers() map[string]http.HandlerFunc {
+	return map[string]http.HandlerFunc{
+		metadatasdk.ActionMetadataDefinitionsList:          h.listDefinitions,
+		metadatasdk.ActionMetadataDefinitionsGet:           h.getDefinition,
+		metadatasdk.ActionMetadataLocalizedTextsList:       h.listLocalizedTexts,
+		metadatasdk.ActionMetadataLocalizedTextsCoverage:   h.localizedTextCoverage,
+		metadatasdk.ActionMetadataLocalizedTextsExportCSV:  h.exportLocalizedTextsCSV,
+		metadatasdk.ActionMetadataLocalizedTextsExportXLSX: h.exportLocalizedTextsXLSX,
+		metadatasdk.ActionMetadataDictionaryItemsList:      h.dictionaryItems,
+	}
 }
 
 func (h *metadataHandler) listDefinitions(writer http.ResponseWriter, request *http.Request) {
-	principal, ok := metadataPrincipal(request)
+	principal, ok := metadataPrincipal(request, metadatasdk.ActionMetadataDefinitionsList)
 	if !ok || !sameWorkspace(request.URL.Query().Get("workspace_id"), principal.WorkspaceID) {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return
@@ -109,7 +132,7 @@ func (h *metadataHandler) listDefinitions(writer http.ResponseWriter, request *h
 }
 
 func (h *metadataHandler) getDefinition(writer http.ResponseWriter, request *http.Request) {
-	if _, ok := metadataPrincipal(request); !ok {
+	if _, ok := metadataPrincipal(request, metadatasdk.ActionMetadataDefinitionsGet); !ok {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return
 	}
@@ -126,7 +149,7 @@ func (h *metadataHandler) getDefinition(writer http.ResponseWriter, request *htt
 }
 
 func (h *metadataHandler) listLocalizedTexts(writer http.ResponseWriter, request *http.Request) {
-	query, ok := localizedTextQuery(request)
+	query, ok := localizedTextQuery(request, metadatasdk.ActionMetadataLocalizedTextsList)
 	if !ok {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return
@@ -140,7 +163,7 @@ func (h *metadataHandler) listLocalizedTexts(writer http.ResponseWriter, request
 }
 
 func (h *metadataHandler) localizedTextCoverage(writer http.ResponseWriter, request *http.Request) {
-	principal, ok := metadataPrincipal(request)
+	principal, ok := metadataPrincipal(request, metadatasdk.ActionMetadataLocalizedTextsCoverage)
 	if !ok {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return
@@ -156,7 +179,7 @@ func (h *metadataHandler) localizedTextCoverage(writer http.ResponseWriter, requ
 }
 
 func (h *metadataHandler) exportLocalizedTextsCSV(writer http.ResponseWriter, request *http.Request) {
-	values, ok := h.exportValues(writer, request)
+	values, ok := h.exportValues(writer, request, metadatasdk.ActionMetadataLocalizedTextsExportCSV)
 	if !ok {
 		return
 	}
@@ -167,7 +190,7 @@ func (h *metadataHandler) exportLocalizedTextsCSV(writer http.ResponseWriter, re
 }
 
 func (h *metadataHandler) exportLocalizedTextsXLSX(writer http.ResponseWriter, request *http.Request) {
-	values, ok := h.exportValues(writer, request)
+	values, ok := h.exportValues(writer, request, metadatasdk.ActionMetadataLocalizedTextsExportXLSX)
 	if !ok {
 		return
 	}
@@ -177,8 +200,8 @@ func (h *metadataHandler) exportLocalizedTextsXLSX(writer http.ResponseWriter, r
 	_, _ = writer.Write(localizedTextXLSX(values))
 }
 
-func (h *metadataHandler) exportValues(writer http.ResponseWriter, request *http.Request) ([]metadatasdk.LocalizedText, bool) {
-	query, ok := localizedTextQuery(request)
+func (h *metadataHandler) exportValues(writer http.ResponseWriter, request *http.Request, actionKey string) ([]metadatasdk.LocalizedText, bool) {
+	query, ok := localizedTextQuery(request, actionKey)
 	if !ok {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return nil, false
@@ -192,7 +215,7 @@ func (h *metadataHandler) exportValues(writer http.ResponseWriter, request *http
 }
 
 func (h *metadataHandler) dictionaryItems(writer http.ResponseWriter, request *http.Request) {
-	principal, ok := metadataPrincipal(request)
+	principal, ok := metadataPrincipal(request, "")
 	if !ok {
 		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
 		return
@@ -206,8 +229,8 @@ func (h *metadataHandler) dictionaryItems(writer http.ResponseWriter, request *h
 	writeMetadataJSON(writer, http.StatusOK, result)
 }
 
-func localizedTextQuery(request *http.Request) (metadatasdk.LocalizedTextQuery, bool) {
-	principal, ok := metadataPrincipal(request)
+func localizedTextQuery(request *http.Request, actionKey string) (metadatasdk.LocalizedTextQuery, bool) {
+	principal, ok := metadataPrincipal(request, actionKey)
 	if !ok {
 		return metadatasdk.LocalizedTextQuery{}, false
 	}
@@ -221,9 +244,13 @@ func localizedTextQuery(request *http.Request) (metadatasdk.LocalizedTextQuery, 
 	return metadatasdk.LocalizedTextQuery{WorkspaceID: workspaceID, EntityType: strings.TrimSpace(request.URL.Query().Get("entity_type")), EntityKey: strings.TrimSpace(request.URL.Query().Get("entity_key")), Property: strings.TrimSpace(request.URL.Query().Get("property")), Locale: strings.TrimSpace(request.URL.Query().Get("locale"))}, true
 }
 
-func metadataPrincipal(request *http.Request) (identitysdk.Principal, bool) {
+func metadataPrincipal(request *http.Request, actionKey string) (identitysdk.Principal, bool) {
 	principal, ok := identitysdk.PrincipalFromContext(request.Context())
-	return principal, ok && principal.Known && strings.TrimSpace(principal.WorkspaceID) != ""
+	authorized := ok && principal.Known && strings.TrimSpace(principal.WorkspaceID) != ""
+	if authorized && strings.TrimSpace(actionKey) != "" {
+		authorized = principal.HasPermission(actionKey)
+	}
+	return principal, authorized
 }
 
 func sameWorkspace(requested, principal string) bool {

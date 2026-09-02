@@ -22,7 +22,11 @@ func TestMetadataCapabilityTracksProjectionContractAndOwnerValidation(t *testing
 	for _, category := range summary.Categories {
 		operations += category.OperationCount
 	}
-	if operations != len(metadataRoutes()) || len(summary.Identity.SupportedDeploymentModes) != 1 || summary.Identity.SupportedDeploymentModes[0] != modulecapability.DeploymentModeModule {
+	routes, err := metadataRoutes()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if operations != len(routes) || len(summary.Identity.SupportedDeploymentModes) != 1 || summary.Identity.SupportedDeploymentModes[0] != modulecapability.DeploymentModeModule {
 		t.Fatalf("Metadata operations=%d topology=%v", operations, summary.Identity.SupportedDeploymentModes)
 	}
 	request := modulecapability.ValidationRequest{ContractVersion: modulecapability.ValidationContractVersion, ModuleKey: "metadata", CategoryKey: "metadata.dictionaries", ContractSHA256: summary.Identity.ContractSHA256, Kind: "metadata.dictionary", Candidate: modulecapability.AuthoringFragment{Collection: "dictionaries", Key: "status", Value: json.RawMessage(`{"key":"status","items":[{"key":"active"},{"key":"active"}]}`)}}
