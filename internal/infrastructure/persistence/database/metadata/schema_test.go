@@ -3,6 +3,8 @@ package metadata
 import (
 	"database/sql"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -42,9 +44,88 @@ func TestMetadataMigrationOwnsDefinitionCatalog(t *testing.T) {
 	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name LIKE '_metadata_%'`).Scan(&metadataTableCount); err != nil || metadataTableCount != len(OwnedTables()) {
 		t.Fatalf("metadata table count=%d err=%v", metadataTableCount, err)
 	}
-	if checksum := ormmigration.Checksum(migrations[0]); checksum == "" {
-		t.Fatal("empty migration checksum")
+	for _, migration := range migrations {
+		if checksum := ormmigration.Checksum(migration); checksum == "" {
+			t.Fatalf("empty migration checksum for %s", migration.Name)
+		}
 	}
+}
+
+func TestLocalizedTextReadPushesWorkspaceAndNoInventedOwnerRangeIntoSQL(t *testing.T) {
+	_, store := localizedTextTestStore(t)
+	statement, args, err := store.localizedTextListStatement(metadatasdk.LocalizedTextQuery{WorkspaceID: "workspace-a", Locale: "en-US"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(statement, "workspace_id") || strings.Contains(statement, "owner_user_id") || strings.Contains(statement, "owner_org_id") || !reflect.DeepEqual(args, []any{"workspace-a", "en-US"}) {
+		t.Fatalf("statement=%s args=%#v", statement, args)
+	}
+}
+
+func TestLocalizedTextSourceReplacementCannotDeleteAnotherWorkspace(t *testing.T) {
+	_, store := localizedTextTestStore(t)
+	first := []metadatasdk.LocalizedText{
+		{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "a", Property: "name", Locale: "en-US", Text: "A"},
+		{WorkspaceID: "workspace-b", EntityType: "object", EntityKey: "b", Property: "name", Locale: "en-US", Text: "B"},
+	}
+	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", first, "2026-09-03T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	second := []metadatasdk.LocalizedText{{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "a2", Property: "name", Locale: "en-US", Text: "A2"}}
+	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", second, "2026-09-03T00:00:01Z"); err != nil {
+		t.Fatal(err)
+	}
+	workspaceA, err := store.ListLocalizedTexts(t.Context(), metadatasdk.LocalizedTextQuery{WorkspaceID: "workspace-a"})
+	if err != nil || len(workspaceA) != 1 || workspaceA[0].EntityKey != "a2" {
+		t.Fatalf("workspace-a values=%#v err=%v", workspaceA, err)
+	}
+	workspaceB, err := store.ListLocalizedTexts(t.Context(), metadatasdk.LocalizedTextQuery{WorkspaceID: "workspace-b"})
+	if err != nil || len(workspaceB) != 1 || workspaceB[0].EntityKey != "b" {
+		t.Fatalf("workspace-b values=%#v err=%v", workspaceB, err)
+	}
+}
+
+func TestProjectionLocalizedTextBatchIsAtomic(t *testing.T) {
+	database, store := localizedTextTestStore(t)
+	err := store.SyncProjection(t.Context(), metadatasdk.ProjectionSnapshot{
+		SchemaVersion: "1", SourceKind: "user", SourceID: "user-a",
+		LocalizedText: []metadatasdk.LocalizedText{
+			{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "valid", Property: "name", Locale: "en-US", Text: "Valid"},
+			{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "invalid", Property: "name", Locale: "en-US"},
+		},
+	})
+	if err == nil {
+		t.Fatal("invalid localized-text batch was accepted")
+	}
+	var count int
+	if queryErr := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _metadata_localized_texts`).Scan(&count); queryErr != nil || count != 0 {
+		t.Fatalf("localized rows=%d err=%v", count, queryErr)
+	}
+}
+
+func localizedTextTestStore(t *testing.T) (*sql.DB, DefinitionStore) {
+	t.Helper()
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	migrations, err := SchemaMigrations("sqlite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			if _, err := database.ExecContext(t.Context(), statement); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	dialect, err := ormdialect.New(ormdialect.SQLite)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return database, NewDefinitionStore(database, dialect.WithSchema(""))
 }
 
 func TestDefinitionStoreSynchronizesAndReadsOwnedSnapshot(t *testing.T) {

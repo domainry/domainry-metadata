@@ -136,14 +136,56 @@ func TestSurfaceDoesNotAuthorizeListWithAnotherExactMetadataPermission(t *testin
 	}
 }
 
+func TestSurfaceRejectsFunctionGrantWithoutSameKeyDataPolicy(t *testing.T) {
+	definitions := &testDefinitions{}
+	surface, err := NewSurface(testBinding{definitions: definitions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	permission := metadatasdk.ActionMetadataDefinitionsList
+	separator := strings.LastIndexByte(permission, '.')
+	principal := identitysdk.Principal{
+		ContractVersion: identitysdk.PrincipalContextContractVersion, Known: true, WorkspaceID: "workspace-a", UserID: "user-a",
+		AccessBundle: &identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: identitysdk.ResourceType(permission[:separator]), Action: identitysdk.Action(permission[separator+1:]), Effect: identitysdk.EffectAllow}}},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
+	response := httptest.NewRecorder()
+	surface.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
+	}
+}
+
+func TestSurfaceDoesNotTreatRecordScopeAsWorkspaceWideMetadataAccess(t *testing.T) {
+	definitions := &testDefinitions{}
+	surface, err := NewSurface(testBinding{definitions: definitions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
+	principal.AccessBundle.DataPolicies[0].DataScopes = []identitysdk.DataScope{identitysdk.DataScopeOwner}
+	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
+	response := httptest.NewRecorder()
+	surface.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
+	}
+}
+
 func metadataTestPrincipal(actionKey string) identitysdk.Principal {
 	separator := strings.LastIndex(actionKey, ".")
+	resource, action := identitysdk.ResourceType(actionKey[:separator]), identitysdk.Action(actionKey[separator+1:])
+	bundle := identitysdk.AccessBundle{
+		Subject:        identitysdk.Subject{WorkspaceID: "workspace-a", SubjectID: "user-a"},
+		FunctionGrants: []identitysdk.FunctionGrant{{Resource: resource, Action: action, Effect: identitysdk.EffectAllow}},
+		DataPolicies:   []identitysdk.DataPolicy{{Key: actionKey, Resource: resource, Action: action, Effect: identitysdk.EffectAllow, DataScopes: []identitysdk.DataScope{identitysdk.DataScopeAll}}},
+	}
 	return identitysdk.Principal{
 		ContractVersion: identitysdk.PrincipalContextContractVersion,
 		Known:           true, WorkspaceID: "workspace-a", UserID: "user-a",
-		AccessBundle: &identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{
-			Resource: identitysdk.ResourceType(actionKey[:separator]), Action: identitysdk.Action(actionKey[separator+1:]), Effect: identitysdk.EffectAllow,
-		}}},
+		AccessBundle: &bundle,
 	}
 }
 

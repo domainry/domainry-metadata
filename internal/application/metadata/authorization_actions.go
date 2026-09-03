@@ -37,7 +37,7 @@ func AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 func metadataRoleAction(key, capabilityKey, capabilityLabel, pattern, label string) actioncontract.ActionDefinition {
 	definition := metadataAction(key, capabilityKey, capabilityLabel, pattern, label)
 	separator := strings.LastIndex(key, ".")
-	definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationExactRolePermission}
+	definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 	definition.Permission = &actioncontract.PermissionDefinition{
 		Key: key, Owner: AuthorizationOwner, ResourceKey: key[:separator], OperationKey: key[separator+1:],
 		Label: label, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive,
@@ -48,7 +48,7 @@ func metadataRoleAction(key, capabilityKey, capabilityLabel, pattern, label stri
 func metadataAuthenticatedAction(key, capabilityKey, capabilityLabel, pattern, label string) actioncontract.ActionDefinition {
 	definition := metadataAction(key, capabilityKey, capabilityLabel, pattern, label)
 	definition.Exposures = []actioncontract.Exposure{actioncontract.ExposurePublic, actioncontract.ExposureTenantAdmin}
-	definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticatedPrincipal}
+	definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 	return definition
 }
 

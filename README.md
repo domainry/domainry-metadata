@@ -22,6 +22,13 @@ localization and projection tables. The project has not shipped, so no legacy
 table import or compatibility migration is retained. The SDK exposes business
 ports only; no consumer can type-assert a Metadata persistence repository.
 
+Definition, localization-administration and export HTTP Actions are tenant-admin
+operations. Each requires its exact Permission and a same-key canonical
+`data_scope=all` policy; Metadata has no user/organization record scope. Catalog,
+version and projection identity are installation-scoped by the embedding host,
+while localized-text SQL always carries `workspace_id`. The authenticated
+dictionary-items route remains the deliberate public product-read exception.
+
 ## Verification
 
 ```sh

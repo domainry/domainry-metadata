@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -16,54 +17,66 @@ import (
 const localizedTextTableName = "_metadata_localized_texts"
 
 func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor modulehost.DBTX, sourceKind, sourceID string, values []metadatasdk.LocalizedText, now string) error {
-	remove, args, err := query.NewDeleteBuilder(s.dialect, localizedTextTableName).Where(query.And(
-		query.Equal("source_kind", sourceKind), query.Equal("source_id", sourceID),
-	)).Build()
-	if err != nil {
-		return err
-	}
-	if _, err := executor.ExecContext(ctx, remove, args...); err != nil {
-		return err
-	}
+	sourceKind, sourceID = strings.TrimSpace(sourceKind), strings.TrimSpace(sourceID)
+	byWorkspace := map[string][]metadatasdk.LocalizedText{}
 	for _, value := range values {
 		value = normalizeLocalizedText(value)
 		if value.WorkspaceID == "" || value.EntityType == "" || value.EntityKey == "" || value.Property == "" || value.Locale == "" || value.Text == "" {
 			return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_invalid"}
 		}
 		value.SourceKind, value.SourceID = sourceKind, sourceID
-		predicates := localizedTextIdentity(value)
-		lookup, lookupArgs, err := query.NewSelectBuilder(s.dialect, localizedTextTableName).Columns("source_kind", "source_id").Where(predicates).Build()
+		byWorkspace[value.WorkspaceID] = append(byWorkspace[value.WorkspaceID], value)
+	}
+	workspaces := make([]string, 0, len(byWorkspace))
+	for workspaceID := range byWorkspace {
+		workspaces = append(workspaces, workspaceID)
+	}
+	sort.Strings(workspaces)
+	for _, workspaceID := range workspaces {
+		remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, localizedTextTableName, workspaceID).Where(query.And(
+			query.Equal("source_kind", sourceKind), query.Equal("source_id", sourceID),
+		)).Build()
 		if err != nil {
 			return err
 		}
-		var existingKind, existingID string
-		lookupErr := executor.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingKind, &existingID)
-		if lookupErr != nil && lookupErr != sql.ErrNoRows {
-			return lookupErr
+		if _, err := executor.ExecContext(ctx, remove, args...); err != nil {
+			return err
 		}
-		if lookupErr == nil && (existingKind != sourceKind || existingID != sourceID) {
-			continue
-		}
-		if lookupErr == nil {
-			update, updateArgs, err := query.NewUpdateBuilder(s.dialect, localizedTextTableName).
-				Set("text", value.Text).Set("source_kind", sourceKind).Set("source_id", sourceID).Set("updated_at", now).
-				Where(predicates).Build()
+		for _, value := range byWorkspace[workspaceID] {
+			predicates := localizedTextIdentity(value)
+			lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, workspaceID).Columns("source_kind", "source_id").Where(predicates).Build()
 			if err != nil {
 				return err
 			}
-			if _, err := executor.ExecContext(ctx, update, updateArgs...); err != nil {
+			var existingKind, existingID string
+			lookupErr := executor.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingKind, &existingID)
+			if lookupErr != nil && lookupErr != sql.ErrNoRows {
+				return lookupErr
+			}
+			if lookupErr == nil && (existingKind != sourceKind || existingID != sourceID) {
+				continue
+			}
+			if lookupErr == nil {
+				update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, localizedTextTableName, workspaceID).
+					Set("text", value.Text).Set("source_kind", sourceKind).Set("source_id", sourceID).Set("updated_at", now).
+					Where(predicates).Build()
+				if err != nil {
+					return err
+				}
+				if _, err := executor.ExecContext(ctx, update, updateArgs...); err != nil {
+					return err
+				}
+				continue
+			}
+			insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, localizedTextTableName, workspaceID).Columns(
+				"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
+			).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, sourceKind, sourceID, now, now).Build()
+			if err != nil {
 				return err
 			}
-			continue
-		}
-		insert, insertArgs, err := query.NewInsertBuilder(s.dialect, localizedTextTableName).Columns(
-			"id", "workspace_id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
-		).Values(localizedTextID(value), value.WorkspaceID, value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, sourceKind, sourceID, now, now).Build()
-		if err != nil {
-			return err
-		}
-		if _, err := executor.ExecContext(ctx, insert, insertArgs...); err != nil {
-			return err
+			if _, err := executor.ExecContext(ctx, insert, insertArgs...); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -91,23 +104,7 @@ func (s DefinitionStore) ListLocalizedTexts(ctx context.Context, queryValue meta
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
-	queryValue.WorkspaceID = strings.TrimSpace(queryValue.WorkspaceID)
-	if queryValue.WorkspaceID == "" {
-		return nil, &metadatasdk.Error{StatusCode: 400, Code: "metadata.workspace_required"}
-	}
-	predicates := []query.Predicate{query.Equal("workspace_id", queryValue.WorkspaceID)}
-	add := func(column, value string) {
-		if value = strings.TrimSpace(value); value != "" {
-			predicates = append(predicates, query.Equal(column, value))
-		}
-	}
-	add("entity_type", queryValue.EntityType)
-	add("entity_key", queryValue.EntityKey)
-	add("property", queryValue.Property)
-	add("locale", queryValue.Locale)
-	statement, args, err := query.NewSelectBuilder(s.dialect, localizedTextTableName).Columns(
-		"workspace_id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
-	).Where(query.And(predicates...)).OrderBy(query.Ascending("entity_type"), query.Ascending("entity_key"), query.Ascending("property"), query.Ascending("locale")).Build()
+	statement, args, err := s.localizedTextListStatement(queryValue)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +122,30 @@ func (s DefinitionStore) ListLocalizedTexts(ctx context.Context, queryValue meta
 		values = append(values, value)
 	}
 	return values, rows.Err()
+}
+
+func (s DefinitionStore) localizedTextListStatement(queryValue metadatasdk.LocalizedTextQuery) (string, []any, error) {
+	queryValue.WorkspaceID = strings.TrimSpace(queryValue.WorkspaceID)
+	if queryValue.WorkspaceID == "" {
+		return "", nil, &metadatasdk.Error{StatusCode: 400, Code: "metadata.workspace_required"}
+	}
+	predicates := []query.Predicate{}
+	add := func(column, value string) {
+		if value = strings.TrimSpace(value); value != "" {
+			predicates = append(predicates, query.Equal(column, value))
+		}
+	}
+	add("entity_type", queryValue.EntityType)
+	add("entity_key", queryValue.EntityKey)
+	add("property", queryValue.Property)
+	add("locale", queryValue.Locale)
+	builder := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, queryValue.WorkspaceID).Columns(
+		"workspace_id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
+	)
+	if len(predicates) > 0 {
+		builder.Where(query.And(predicates...))
+	}
+	return builder.OrderBy(query.Ascending("entity_type"), query.Ascending("entity_key"), query.Ascending("property"), query.Ascending("locale")).Build()
 }
 
 func (s DefinitionStore) ProjectionName(ctx context.Context) (string, error) {
@@ -152,7 +173,7 @@ func normalizeLocalizedText(value metadatasdk.LocalizedText) metadatasdk.Localiz
 }
 
 func localizedTextIdentity(value metadatasdk.LocalizedText) query.Predicate {
-	return query.And(query.Equal("workspace_id", value.WorkspaceID), query.Equal("entity_type", value.EntityType), query.Equal("entity_key", value.EntityKey), query.Equal("property", value.Property), query.Equal("locale", value.Locale))
+	return query.And(query.Equal("entity_type", value.EntityType), query.Equal("entity_key", value.EntityKey), query.Equal("property", value.Property), query.Equal("locale", value.Locale))
 }
 
 func localizedTextID(value metadatasdk.LocalizedText) string {

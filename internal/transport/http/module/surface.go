@@ -248,9 +248,40 @@ func metadataPrincipal(request *http.Request, actionKey string) (identitysdk.Pri
 	principal, ok := identitysdk.PrincipalFromContext(request.Context())
 	authorized := ok && principal.Known && strings.TrimSpace(principal.WorkspaceID) != ""
 	if authorized && strings.TrimSpace(actionKey) != "" {
-		authorized = principal.HasPermission(actionKey)
+		authorized = metadataWorkspacePermission(principal, actionKey)
 	}
 	return principal, authorized
+}
+
+func metadataWorkspacePermission(principal identitysdk.Principal, permissionKey string) bool {
+	permissionKey = strings.TrimSpace(permissionKey)
+	if !principal.HasPermission(permissionKey) || principal.AccessBundle == nil {
+		return false
+	}
+	if strings.TrimSpace(string(principal.AccessBundle.Subject.WorkspaceID)) != strings.TrimSpace(principal.WorkspaceID) || strings.TrimSpace(string(principal.AccessBundle.Subject.SubjectID)) != strings.TrimSpace(principal.UserID) {
+		return false
+	}
+	separator := strings.LastIndexByte(permissionKey, '.')
+	if separator <= 0 || separator == len(permissionKey)-1 {
+		return false
+	}
+	resource, action := permissionKey[:separator], permissionKey[separator+1:]
+	allowed := false
+	for _, policy := range principal.AccessBundle.DataPolicies {
+		if strings.TrimSpace(string(policy.Resource)) != resource || strings.TrimSpace(string(policy.Action)) != action {
+			continue
+		}
+		if policy.Effect == identitysdk.EffectDeny {
+			return false
+		}
+		if policy.Effect != identitysdk.EffectAllow {
+			continue
+		}
+		if len(policy.DataScopes) == 1 && policy.DataScopes[0] == identitysdk.DataScopeAll && policy.Predicate.IsZero() {
+			allowed = true
+		}
+	}
+	return allowed
 }
 
 func sameWorkspace(requested, principal string) bool {
