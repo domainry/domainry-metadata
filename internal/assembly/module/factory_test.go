@@ -68,9 +68,9 @@ func TestFactoryComposesLayeredModuleAndUsesHostMigrationRegistrar(t *testing.T)
 	if binding.Definitions() == nil || binding.Localization() == nil || binding.Dictionaries() == nil || binding.Projection() == nil {
 		t.Fatal("Metadata Binding business ports are incomplete")
 	}
-	provider, ok := binding.(interface{ HTTPSurfaces() []modulehttp.Surface })
-	if !ok || len(provider.HTTPSurfaces()) != 1 {
-		t.Fatal("Metadata Binding HTTP Surface is unavailable")
+	provider, ok := binding.(interface{ HTTPAdapters() []modulehttp.Adapter })
+	if !ok || len(provider.HTTPAdapters()) != 1 {
+		t.Fatal("Metadata Binding HTTP Adapter is unavailable")
 	}
 	actionProvider, ok := binding.(actioncontract.Provider)
 	if !ok {

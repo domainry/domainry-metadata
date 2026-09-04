@@ -51,11 +51,11 @@ func (*Factory) OpenModule(ctx context.Context, application metadatasdk.Applicat
 	if err != nil {
 		return nil, err
 	}
-	surface, err := modulehttptransport.NewSurface(binding)
+	adapter, err := modulehttptransport.NewAdapter(binding)
 	if err != nil {
 		return nil, err
 	}
-	binding.SetHTTPSurfaces([]modulehttp.Surface{surface})
+	binding.SetHTTPAdapters([]modulehttp.Adapter{adapter})
 	if err := binding.Descriptor().Validate(); err != nil {
 		return nil, err
 	}

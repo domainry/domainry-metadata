@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: metadata-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: "off"
+      GOPRIVATE: github.com/domainry/*
+      GONOSUMDB: github.com/domainry/*
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Configure private module access
+        env:
+          DOMAINRY_REPOSITORY_TOKEN: ${{ secrets.DOMAINRY_REPOSITORY_TOKEN }}
+        run: |
+          if [ -n "$DOMAINRY_REPOSITORY_TOKEN" ]; then
+            git config --global url."https://x-access-token:${DOMAINRY_REPOSITORY_TOKEN}@github.com/".insteadOf "https://github.com/"
+          fi
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run all tests
+        run: go test ./...
+
+      - name: Run database integration tests
+        run: go test ./module -run 'TestPublic(Module|HTTP)' -count=1
+
+      - name: Run race-sensitive tests
+        run: go test -race ./module ./internal/infrastructure/persistence/database/metadata ./internal/transport/http/module

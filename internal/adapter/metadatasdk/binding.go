@@ -16,7 +16,7 @@ type Binding struct {
 	localization metadatasdk.Localization
 	dictionaries metadatasdk.Dictionaries
 	projection   metadatasdk.Projection
-	surfaces     []modulehttp.Surface
+	adapters     []modulehttp.Adapter
 	capability   modulecapability.Binding
 }
 
@@ -37,8 +37,8 @@ func (b *Binding) ValidateCapabilityCandidate(ctx context.Context, request modul
 	return b.capability.ValidateCapabilityCandidate(ctx, request)
 }
 
-func (b *Binding) SetHTTPSurfaces(surfaces []modulehttp.Surface) {
-	b.surfaces = append([]modulehttp.Surface(nil), surfaces...)
+func (b *Binding) SetHTTPAdapters(adapters []modulehttp.Adapter) {
+	b.adapters = append([]modulehttp.Adapter(nil), adapters...)
 }
 
 func (*Binding) Descriptor() metadatasdk.Descriptor {
@@ -51,8 +51,8 @@ func (b *Binding) Definitions() metadatasdk.Definitions   { return b.definitions
 func (b *Binding) Localization() metadatasdk.Localization { return b.localization }
 func (b *Binding) Dictionaries() metadatasdk.Dictionaries { return b.dictionaries }
 func (b *Binding) Projection() metadatasdk.Projection     { return b.projection }
-func (b *Binding) HTTPSurfaces() []modulehttp.Surface {
-	return append([]modulehttp.Surface(nil), b.surfaces...)
+func (b *Binding) HTTPAdapters() []modulehttp.Adapter {
+	return append([]modulehttp.Adapter(nil), b.adapters...)
 }
 
 func (*Binding) AuthorizationActions() ([]actioncontract.ActionDefinition, error) {

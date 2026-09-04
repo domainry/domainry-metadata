@@ -48,6 +48,9 @@ func (s DefinitionStore) SyncProjection(ctx context.Context, snapshot metadatasd
 	if err := validateProjectionIdentity(snapshot.SchemaVersion, snapshot.SourceKind, snapshot.SourceID); err != nil {
 		return err
 	}
+	snapshot.SchemaVersion = strings.TrimSpace(snapshot.SchemaVersion)
+	snapshot.SourceKind = strings.TrimSpace(snapshot.SourceKind)
+	snapshot.SourceID = strings.TrimSpace(snapshot.SourceID)
 	sync := func(executor modulehost.DBTX) error {
 		now := time.Now().UTC().Format(time.RFC3339Nano)
 		if err := s.syncDefinitionRows(ctx, executor, snapshot.SchemaVersion, snapshot.SourceKind, snapshot.SourceID, snapshot.Definitions, now); err != nil {
@@ -116,6 +119,9 @@ func (s DefinitionStore) syncDefinitionRows(ctx context.Context, tx modulehost.D
 		}
 		if found && (current.SourceKind != sourceKind || current.SourceID != sourceID) {
 			continue
+		}
+		if found && current.SchemaVersion == schemaVersion && current.SchemaHash != hash {
+			return definitionVersionConflict()
 		}
 		if !found || current.SchemaHash != hash {
 			if err := s.insertDefinitionVersionIfMissing(ctx, tx, definitionVersion{

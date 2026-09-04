@@ -16,28 +16,28 @@ import (
 )
 
 func TestSurfaceDeclaresMetadataOwnedReadRoutes(t *testing.T) {
-	surface, err := NewSurface(testBinding{})
+	adapter, err := NewAdapter(testBinding{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := modulehttp.ValidateSurface(surface); err != nil {
-		t.Fatalf("validate surface: %v", err)
+	if err := modulehttp.ValidateAdapter(adapter); err != nil {
+		t.Fatalf("validate adapter: %v", err)
 	}
-	patterns := make([]string, 0, len(surface.Routes()))
-	for _, route := range surface.Routes() {
+	patterns := make([]string, 0, len(adapter.Routes()))
+	for _, route := range adapter.Routes() {
 		patterns = append(patterns, route.Pattern())
 		if route.Action.EffectClass != actioncontract.EffectRead || route.Action.IdempotencyDecision != "not_applicable" {
 			t.Fatalf("route %q action=%#v", route.Pattern(), route.Action)
 		}
 	}
 	want := []string{
-		"GET /tenant-admin/metadata/definitions/{resourceType}",
-		"GET /tenant-admin/metadata/definitions/{resourceType}/{resourceKey}",
-		"GET /tenant-admin/metadata/localized-texts",
-		"GET /tenant-admin/metadata/localized-texts/coverage",
-		"GET /tenant-admin/metadata/localized-texts/export",
-		"GET /tenant-admin/metadata/localized-texts/export.xlsx",
-		"GET /dictionaries/{dictionaryKey}/items",
+		"GET /metadata/definitions/{resourceType}",
+		"GET /metadata/definitions/{resourceType}/{resourceKey}",
+		"GET /metadata/localized-texts",
+		"GET /metadata/localized-texts/coverage",
+		"GET /metadata/localized-texts/export",
+		"GET /metadata/localized-texts/export.xlsx",
+		"GET /metadata/dictionaries/{dictionaryKey}/items",
 	}
 	if !reflect.DeepEqual(patterns, want) {
 		t.Fatalf("patterns=%#v", patterns)
@@ -47,16 +47,16 @@ func TestSurfaceDeclaresMetadataOwnedReadRoutes(t *testing.T) {
 func TestSurfaceUsesAuthenticatedWorkspaceForDefinitionsAndDictionaries(t *testing.T) {
 	definitions := &testDefinitions{values: []metadatasdk.Definition{{ResourceType: "object", ResourceKey: "account"}}}
 	dictionaries := &testDictionaries{}
-	surface, err := NewSurface(testBinding{definitions: definitions, dictionaries: dictionaries})
+	adapter, err := NewAdapter(testBinding{definitions: definitions, dictionaries: dictionaries})
 	if err != nil {
 		t.Fatal(err)
 	}
 	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
 
-	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object?workspace_id=workspace-a", nil)
+	request := httptest.NewRequest(http.MethodGet, "/metadata/definitions/object?workspace_id=workspace-a", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || definitions.query.ResourceType != "object" {
 		t.Fatalf("definition response=%d query=%#v body=%s", response.Code, definitions.query, response.Body.String())
 	}
@@ -64,10 +64,10 @@ func TestSurfaceUsesAuthenticatedWorkspaceForDefinitionsAndDictionaries(t *testi
 		t.Fatal("definition response has no ETag")
 	}
 
-	request = httptest.NewRequest(http.MethodGet, "/dictionaries/status/items?locale=zh-CN", nil)
+	request = httptest.NewRequest(http.MethodGet, "/metadata/dictionaries/status/items?locale=zh-CN", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response = httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK || dictionaries.query.WorkspaceID != "workspace-a" || dictionaries.query.DictionaryKey != "status" || dictionaries.query.Locale != "zh-CN" {
 		t.Fatalf("dictionary response=%d query=%#v body=%s", response.Code, dictionaries.query, response.Body.String())
 	}
@@ -75,15 +75,15 @@ func TestSurfaceUsesAuthenticatedWorkspaceForDefinitionsAndDictionaries(t *testi
 
 func TestSurfaceRejectsCrossWorkspaceDefinitionRead(t *testing.T) {
 	definitions := &testDefinitions{}
-	surface, err := NewSurface(testBinding{definitions: definitions})
+	adapter, err := NewAdapter(testBinding{definitions: definitions})
 	if err != nil {
 		t.Fatal(err)
 	}
 	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
-	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object?workspace_id=workspace-b", nil)
+	request := httptest.NewRequest(http.MethodGet, "/metadata/definitions/object?workspace_id=workspace-b", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -95,13 +95,13 @@ func TestSurfaceRejectsCrossWorkspaceDefinitionRead(t *testing.T) {
 func TestSurfaceHandlersRejectMissingPrincipalBeforeCallingBusinessPorts(t *testing.T) {
 	definitions := &testDefinitions{}
 	dictionaries := &testDictionaries{}
-	surface, err := NewSurface(testBinding{definitions: definitions, dictionaries: dictionaries})
+	adapter, err := NewAdapter(testBinding{definitions: definitions, dictionaries: dictionaries})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{"/tenant-admin/metadata/definitions/object/account", "/dictionaries/status/items"} {
+	for _, path := range []string{"/metadata/definitions/object/account", "/metadata/dictionaries/status/items"} {
 		response := httptest.NewRecorder()
-		surface.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		adapter.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("path=%s status=%d body=%s", path, response.Code, response.Body.String())
 		}
@@ -121,16 +121,16 @@ func TestSurfaceHandlersRejectMissingPrincipalBeforeCallingBusinessPorts(t *test
 
 func TestSurfaceDoesNotAuthorizeListWithAnotherExactMetadataPermission(t *testing.T) {
 	definitions := &testDefinitions{}
-	surface, err := NewSurface(testBinding{definitions: definitions})
+	adapter, err := NewAdapter(testBinding{definitions: definitions})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request := httptest.NewRequest(http.MethodGet, "/metadata/definitions/object", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{
 		Principal: metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsGet),
 	}))
 	response := httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
 	}
@@ -138,7 +138,7 @@ func TestSurfaceDoesNotAuthorizeListWithAnotherExactMetadataPermission(t *testin
 
 func TestSurfaceRejectsFunctionGrantWithoutSameKeyDataPolicy(t *testing.T) {
 	definitions := &testDefinitions{}
-	surface, err := NewSurface(testBinding{definitions: definitions})
+	adapter, err := NewAdapter(testBinding{definitions: definitions})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,10 +148,10 @@ func TestSurfaceRejectsFunctionGrantWithoutSameKeyDataPolicy(t *testing.T) {
 		ContractVersion: identitysdk.PrincipalContextContractVersion, Known: true, WorkspaceID: "workspace-a", UserID: "user-a",
 		AccessBundle: &identitysdk.AccessBundle{FunctionGrants: []identitysdk.FunctionGrant{{Resource: identitysdk.ResourceType(permission[:separator]), Action: identitysdk.Action(permission[separator+1:]), Effect: identitysdk.EffectAllow}}},
 	}
-	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request := httptest.NewRequest(http.MethodGet, "/metadata/definitions/object", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
 	}
@@ -159,16 +159,16 @@ func TestSurfaceRejectsFunctionGrantWithoutSameKeyDataPolicy(t *testing.T) {
 
 func TestSurfaceDoesNotTreatRecordScopeAsWorkspaceWideMetadataAccess(t *testing.T) {
 	definitions := &testDefinitions{}
-	surface, err := NewSurface(testBinding{definitions: definitions})
+	adapter, err := NewAdapter(testBinding{definitions: definitions})
 	if err != nil {
 		t.Fatal(err)
 	}
 	principal := metadataTestPrincipal(metadatasdk.ActionMetadataDefinitionsList)
 	principal.AccessBundle.DataPolicies[0].DataScopes = []identitysdk.DataScope{identitysdk.DataScopeOwner}
-	request := httptest.NewRequest(http.MethodGet, "/tenant-admin/metadata/definitions/object", nil)
+	request := httptest.NewRequest(http.MethodGet, "/metadata/definitions/object", nil)
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
-	surface.Handler().ServeHTTP(response, request)
+	adapter.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusForbidden || definitions.listCalls != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, definitions.listCalls, response.Body.String())
 	}

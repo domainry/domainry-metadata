@@ -33,7 +33,7 @@ func TestAuthorizationActionsFreezeAsOneExactManifest(t *testing.T) {
 			if definition.Authorization.Strategy != actioncontract.AuthorizationAuthenticated {
 				t.Fatalf("unexpected Permission-free Action: %#v", definition)
 			}
-			if !reflect.DeepEqual(definition.Exposures, []actioncontract.Exposure{actioncontract.ExposurePublic, actioncontract.ExposureTenantAdmin}) {
+			if !reflect.DeepEqual(definition.Exposures, []actioncontract.Exposure{actioncontract.ExposureManagement, actioncontract.ExposurePublic}) {
 				t.Fatalf("unexpected public Metadata Action exposure: %#v", definition)
 			}
 			continue
@@ -41,8 +41,8 @@ func TestAuthorizationActionsFreezeAsOneExactManifest(t *testing.T) {
 		if definition.Authorization.Strategy != actioncontract.AuthorizationAuthenticated || definition.Permission.Key != definition.Key || definition.Permission.Owner != definition.Owner {
 			t.Fatalf("non-exact Metadata Action: %#v", definition)
 		}
-		if !reflect.DeepEqual(definition.Exposures, []actioncontract.Exposure{actioncontract.ExposureTenantAdmin}) {
-			t.Fatalf("Metadata management Action is not tenant-admin-only: %#v", definition)
+		if !reflect.DeepEqual(definition.Exposures, []actioncontract.Exposure{actioncontract.ExposureManagement}) {
+			t.Fatalf("Metadata management Action is not management-only: %#v", definition)
 		}
 	}
 }

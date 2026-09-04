@@ -20,24 +20,24 @@ import (
 	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
 )
 
-type metadataSurface struct {
+type metadataAdapter struct {
 	handler    http.Handler
 	routes     []modulehttp.Route
 	operations map[string]map[string]any
 }
 
-func (*metadataSurface) ContractVersion() string { return modulehttp.ContractVersion }
-func (*metadataSurface) Owner() string           { return "metadata" }
-func (*metadataSurface) Name() string            { return "metadata_catalog" }
-func (s *metadataSurface) Handler() http.Handler { return s.handler }
-func (s *metadataSurface) Routes() []modulehttp.Route {
+func (*metadataAdapter) ContractVersion() string { return modulehttp.ContractVersion }
+func (*metadataAdapter) Owner() string           { return "metadata" }
+func (*metadataAdapter) Name() string            { return "metadata_catalog" }
+func (s *metadataAdapter) Handler() http.Handler { return s.handler }
+func (s *metadataAdapter) Routes() []modulehttp.Route {
 	return append([]modulehttp.Route(nil), s.routes...)
 }
-func (s *metadataSurface) OpenAPIOperations() map[string]map[string]any {
+func (s *metadataAdapter) OpenAPIOperations() map[string]map[string]any {
 	return s.operations
 }
 
-func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
+func NewAdapter(binding metadatasdk.Binding) (modulehttp.Adapter, error) {
 	if binding == nil || binding.Definitions() == nil || binding.Localization() == nil || binding.Dictionaries() == nil {
 		return nil, errors.New("Metadata HTTP dependencies are incomplete")
 	}
@@ -75,7 +75,7 @@ func NewSurface(binding metadatasdk.Binding) (modulehttp.Surface, error) {
 		sort.Strings(keys)
 		return nil, fmt.Errorf("Metadata implementations have no Action manifest entries: %v", keys)
 	}
-	return &metadataSurface{handler: handler.mux, routes: routes, operations: operations}, nil
+	return &metadataAdapter{handler: handler.mux, routes: routes, operations: operations}, nil
 }
 
 func metadataRoutes() ([]modulehttp.Route, error) {
@@ -395,5 +395,5 @@ func spreadsheetColumn(index int) string {
 	return name
 }
 
-var _ modulehttp.Surface = (*metadataSurface)(nil)
-var _ modulehttp.OpenAPIProvider = (*metadataSurface)(nil)
+var _ modulehttp.Adapter = (*metadataAdapter)(nil)
+var _ modulehttp.OpenAPIProvider = (*metadataAdapter)(nil)
