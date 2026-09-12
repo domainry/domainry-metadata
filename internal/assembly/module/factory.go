@@ -32,7 +32,7 @@ func (*Factory) OpenModule(ctx context.Context, application metadatasdk.Applicat
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.Migrations() == nil {
 		return nil, fmt.Errorf("Metadata Module persistence host is incomplete")
 	}
-	migrations, err := metadatastore.SchemaMigrationsForDialect(host.Dialect())
+	migrations, err := metadatastore.SchemaMigrationsForDialect(host.Dialect(), host.Migrations().Driver())
 	if err != nil {
 		return nil, err
 	}

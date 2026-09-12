@@ -2,6 +2,7 @@ package metadata
 
 import (
 	"fmt"
+	"github.com/domainry/domainry-metadata/internal/infrastructure/persistence"
 
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
@@ -17,10 +18,10 @@ func SchemaMigrations(driver, schema string) ([]modulehost.SchemaMigration, erro
 	if err != nil {
 		return nil, err
 	}
-	return SchemaMigrationsForDialect(dialect.WithSchema(schema))
+	return SchemaMigrationsForDialect(dialect.WithSchema(schema), driver)
 }
 
-func SchemaMigrationsForDialect(renderer modulehost.Dialect) ([]modulehost.SchemaMigration, error) {
+func SchemaMigrationsForDialect(renderer modulehost.Dialect, driver string) ([]modulehost.SchemaMigration, error) {
 	catalog, _, err := ormschema.NewTable(renderer, definitionTableName).IfNotExists().Columns(
 		required("id", ormschema.TextKey(255)), required("resource_type", ormschema.TextKey(255)),
 		required("resource_key", ormschema.TextKey(255)), required("object_key", ormschema.TextKey(255)),
@@ -52,6 +53,10 @@ func SchemaMigrationsForDialect(renderer modulehost.Dialect) ([]modulehost.Schem
 	).PrimaryKey("workspace_id", "id").Unique("workspace_id", "entity_type", "entity_key", "property", "locale").Build()
 	if err != nil {
 		return nil, fmt.Errorf("build %s: %w", localizedTextTableName, err)
+	}
+	localized, err = persistence.LocalizedTable(driver, renderer, localized)
+	if err != nil {
+		return nil, err
 	}
 	projection, _, err := ormschema.NewTable(renderer, "_metadata_projection").IfNotExists().Columns(
 		required("id", ormschema.TextKey(255)), required("schema_version", ormschema.TextKey(255)),
