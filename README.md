@@ -1,5 +1,7 @@
 # domainry-metadata
 
+Agent-facing question index and source-owned guides: [`capability/agent/index.json`](capability/agent/index.json).
+
 Source-owned Metadata implementation for Domainry. The repository currently
 ships an embedded Module topology; Runtime provides its database, SQL dialect
 and migration registrar. Metadata owns its transactions, tables, DML and HTTP
