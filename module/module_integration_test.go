@@ -257,7 +257,7 @@ func TestPublicModuleRejectsConcurrentDefinitionVersionConflict(t *testing.T) {
 	}
 }
 
-func TestPublicModuleCapabilityRejectsInvalidCandidate(t *testing.T) {
+func TestPublicModuleCapabilityDoesNotReintroduceDictionaryAuthoring(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metadata-capability.db")
 	database, binding, _ := openIntegrationModule(t, path)
 	defer database.Close()
@@ -266,7 +266,7 @@ func TestPublicModuleCapabilityRejectsInvalidCandidate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := binding.ValidateCapabilityCandidate(t.Context(), modulecapability.ValidationRequest{
+	_, err = binding.ValidateCapabilityCandidate(t.Context(), modulecapability.ValidationRequest{
 		ContractVersion: modulecapability.ValidationContractVersion,
 		ModuleKey:       "metadata",
 		CategoryKey:     metadatasdk.CapabilityMetadataDictionaries,
@@ -278,8 +278,8 @@ func TestPublicModuleCapabilityRejectsInvalidCandidate(t *testing.T) {
 			Value:      json.RawMessage(`{"key":"status","items":[{"key":"active"},{"key":"active"}]}`),
 		},
 	})
-	if err != nil || len(result.Diagnostics) != 1 || result.Diagnostics[0].RuleKey != "metadata.dictionary.item_key_invalid" || result.Diagnostics[0].Severity != modulecapability.SeverityError {
-		t.Fatalf("diagnostics=%#v err=%v", result.Diagnostics, err)
+	if err == nil || !strings.Contains(err.Error(), "module_capability.validation_scope_invalid") {
+		t.Fatalf("Metadata accepted a competing Dictionary authoring candidate: %v", err)
 	}
 }
 

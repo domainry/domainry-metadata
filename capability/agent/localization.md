@@ -8,6 +8,7 @@
 
 - Translating a Report measure and description into French without redefining the measure.
 - Providing localized field or module labels with deterministic locale fallback and missing-translation reporting.
+- Lowering translation coverage when a source owner adds a new stable field/item key until that exact key is translated.
 
 ## Use when
 
@@ -32,7 +33,7 @@ The semantic owner publishes a stable definition key. Metadata stores localized 
 
 ## Example
 
-Report publishes a revenue measure. Metadata provides French label “Revenu” and flags a missing description; Report still owns the measure/query.
+A page requests `zh-CN` for a published Report measure. Metadata resolves the exact locale when present; otherwise it follows the declared fallback chain, returns the actual locale used, and keeps the measure key/calculation unchanged. Before release, coverage lists every missing owner/resource/text key rather than filling empty strings. When the source owner adds a field or dictionary item, coverage falls until that new stable key is translated; text is never copied from an old or similar key. Report still owns the measure/query.
 
 ## Permissions and scope
 

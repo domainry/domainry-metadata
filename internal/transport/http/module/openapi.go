@@ -31,6 +31,12 @@ func metadataOpenAPIOperationsByAction() map[string]map[string]any {
 	}
 }
 
+// CapabilityOpenAPIOperationsByAction returns the source-owned OpenAPI facts
+// consumed by the public capability contract.
+func CapabilityOpenAPIOperationsByAction() map[string]map[string]any {
+	return metadataOpenAPIOperationsByAction()
+}
+
 func metadataLocalizationQueryParameters(query func(string) map[string]any) []any {
 	result := []any{}
 	for _, name := range strings.Fields("workspace_id entity_type entity_key property locale") {

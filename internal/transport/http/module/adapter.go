@@ -97,6 +97,12 @@ func metadataRoutes() ([]modulehttp.Route, error) {
 	return routes, nil
 }
 
+// CapabilityRoutes returns the immutable source-owned route manifest used by
+// the public capability contract.
+func CapabilityRoutes() ([]modulehttp.Route, error) {
+	return metadataRoutes()
+}
+
 type metadataHandler struct {
 	definitions  metadatasdk.Definitions
 	localization metadatasdk.Localization

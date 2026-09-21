@@ -4,11 +4,10 @@ package capability
 
 import (
 	"github.com/domainry/domainry-foundation/modulecapability"
-	metadatahttp "github.com/domainry/domainry-metadata/internal/transport/http/module"
 )
 
 type Inputs struct{}
 
-func Open(Inputs) (*modulecapability.StaticBinding, error) {
-	return metadatahttp.NewCapabilityBinding(metadatahttp.ValidateCapabilityCandidate)
+func Open(inputs Inputs) (*modulecapability.StaticBinding, error) {
+	return openContract(inputs)
 }
