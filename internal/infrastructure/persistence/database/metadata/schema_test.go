@@ -5,16 +5,59 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
+	"github.com/domainry/domainry-foundation/schemaownership"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	_ "modernc.org/sqlite"
 )
+
+func TestSchemaOwnershipMatchesEveryFreshMetadataTableAndPrimaryKey(t *testing.T) {
+	tables := SchemaOwnership()
+	if err := schemaownership.ValidateAll(tables); err != nil {
+		t.Fatal(err)
+	}
+	migrations, err := SchemaMigrations("sqlite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := map[string]string{}
+	for _, migration := range migrations {
+		for _, statement := range migration.Statements {
+			const prefix = `CREATE TABLE IF NOT EXISTS "`
+			if !strings.HasPrefix(statement, prefix) {
+				continue
+			}
+			name, _, found := strings.Cut(strings.TrimPrefix(statement, prefix), `"`)
+			if !found || name == "" {
+				t.Fatalf("invalid CREATE TABLE statement: %s", statement)
+			}
+			created[name] = statement
+		}
+	}
+	if len(created) != len(tables) || !slices.Equal(OwnedTables(), schemaownership.Names(tables)) {
+		t.Fatalf("fresh Metadata tables=%v ownership=%+v", created, tables)
+	}
+	for _, table := range tables {
+		statement, found := created[table.Name]
+		if !found {
+			t.Fatalf("Metadata table %s has ownership but no canonical DDL", table.Name)
+		}
+		quoted := make([]string, len(table.PrimaryKey))
+		for index, column := range table.PrimaryKey {
+			quoted[index] = `"` + column + `"`
+		}
+		if primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"; !strings.Contains(statement, primaryKey) {
+			t.Fatalf("Metadata table %s ownership primary key %v does not match DDL: %s", table.Name, table.PrimaryKey, statement)
+		}
+	}
+}
 
 func TestMetadataMigrationOwnsOnlyLocalization(t *testing.T) {
 	migrations, err := SchemaMigrations("sqlite", "")
@@ -215,8 +258,14 @@ func TestDefinitionStoreSynchronizesAndReadsOwnedSnapshot(t *testing.T) {
 		t.Fatalf("fields=%d err=%v", fields, err)
 	}
 	var versions int
-	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions`).Scan(&versions); err != nil || versions != 3 {
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions`).Scan(&versions); err != nil || versions != 5 {
 		t.Fatalf("versions=%d err=%v", versions, err)
+	}
+	for kind, want := range map[string]int{"application": 2, "object": 2, "field": 1} {
+		var count int
+		if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions WHERE kind = ?`, kind).Scan(&count); err != nil || count != want {
+			t.Fatalf("%s versions=%d want=%d err=%v", kind, count, want, err)
+		}
 	}
 }
 

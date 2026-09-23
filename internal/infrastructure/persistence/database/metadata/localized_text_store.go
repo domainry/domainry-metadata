@@ -14,8 +14,6 @@ import (
 	"github.com/domainry/domainry-orm/query"
 )
 
-const localizedTextTableName = "_metadata_localized_texts"
-
 func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatasdk.LocalizedTextResourceSnapshot) error {
 	if err := s.validate(); err != nil {
 		return err
@@ -59,7 +57,7 @@ func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatas
 }
 
 func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, executor modulehost.DBTX, snapshot metadatasdk.LocalizedTextResourceSnapshot, values []metadatasdk.LocalizedText, now string) error {
-	remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Where(query.And(
+	remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Where(query.And(
 		query.Equal("entity_type", snapshot.EntityType), query.Equal("entity_key", snapshot.EntityKey), query.Equal("source_kind", snapshot.SourceKind),
 	)).Build()
 	if err != nil {
@@ -70,7 +68,7 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 	}
 	for _, value := range values {
 		identity := localizedTextIdentity(value)
-		lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Columns("id").Where(identity).Build()
+		lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Columns("id").Where(identity).Build()
 		if err != nil {
 			return err
 		}
@@ -80,7 +78,7 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 			return lookupErr
 		}
 		if lookupErr == nil {
-			update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).
+			update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).
 				Set("text", value.Text).Set("source_kind", snapshot.SourceKind).Set("source_id", snapshot.SourceID).Set("updated_at", now).
 				Where(identity).Build()
 			if err != nil {
@@ -91,7 +89,7 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 			}
 			continue
 		}
-		insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Columns(
+		insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Columns(
 			"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
 		).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, snapshot.SourceKind, snapshot.SourceID, now, now).Build()
 		if err != nil {
@@ -121,7 +119,7 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 	}
 	sort.Strings(workspaces)
 	for _, workspaceID := range workspaces {
-		remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, localizedTextTableName, workspaceID).Where(query.And(
+		remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, LocalizedTextTableName, workspaceID).Where(query.And(
 			query.Equal("source_kind", sourceKind), query.Equal("source_id", sourceID),
 		)).Build()
 		if err != nil {
@@ -132,7 +130,7 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 		}
 		for _, value := range byWorkspace[workspaceID] {
 			predicates := localizedTextIdentity(value)
-			lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, workspaceID).Columns("source_kind", "source_id").Where(predicates).Build()
+			lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, LocalizedTextTableName, workspaceID).Columns("source_kind", "source_id").Where(predicates).Build()
 			if err != nil {
 				return err
 			}
@@ -145,7 +143,7 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 				continue
 			}
 			if lookupErr == nil {
-				update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, localizedTextTableName, workspaceID).
+				update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, LocalizedTextTableName, workspaceID).
 					Set("text", value.Text).Set("source_kind", sourceKind).Set("source_id", sourceID).Set("updated_at", now).
 					Where(predicates).Build()
 				if err != nil {
@@ -156,7 +154,7 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 				}
 				continue
 			}
-			insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, localizedTextTableName, workspaceID).Columns(
+			insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, LocalizedTextTableName, workspaceID).Columns(
 				"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
 			).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, sourceKind, sourceID, now, now).Build()
 			if err != nil {
@@ -209,7 +207,7 @@ func (s DefinitionStore) localizedTextListStatement(queryValue metadatasdk.Local
 	add("entity_key", queryValue.EntityKey)
 	add("property", queryValue.Property)
 	add("locale", queryValue.Locale)
-	builder := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, queryValue.WorkspaceID).Columns(
+	builder := query.NewWorkspaceSelectBuilder(s.dialect, LocalizedTextTableName, queryValue.WorkspaceID).Columns(
 		"workspace_id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
 	)
 	if len(predicates) > 0 {

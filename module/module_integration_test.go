@@ -10,12 +10,14 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/schemaownership"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
@@ -24,6 +26,19 @@ import (
 	ormmigration "github.com/domainry/domainry-orm/migration"
 	_ "modernc.org/sqlite"
 )
+
+func TestModulePublishesOnlyMetadataOwnedSchema(t *testing.T) {
+	tables := metadatamodule.SchemaOwnership()
+	if err := schemaownership.ValidateAll(tables); err != nil {
+		t.Fatal(err)
+	}
+	if len(tables) != 1 || !slices.Equal(metadatamodule.OwnedTables(), schemaownership.Names(tables)) {
+		t.Fatalf("Metadata schema ownership=%d tables=%v", len(tables), metadatamodule.OwnedTables())
+	}
+	if tables[0].Owner != "metadata" || tables[0].Name != "_metadata_localized_texts" {
+		t.Fatalf("Metadata Module claimed foreign table: %+v", tables[0])
+	}
+}
 
 type integrationHost struct {
 	database  *sql.DB
@@ -338,13 +353,14 @@ func TestPublicDefinitionStorePublishDisableAndImmutableVersionRoundTrip(t *test
 	if err != nil || replayed.CurrentVersionID != second.CurrentVersionID {
 		t.Fatalf("idempotent replay=%#v err=%v", replayed, err)
 	}
-	if _, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+	third, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
 		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
 		ExpectedCurrentVersionID: second.CurrentVersionID, SchemaVersion: "3",
 		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Daily sales v2"}`),
 		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-b",
-	}); metadataErrorCode(err) != "metadata.definition_revision_conflict" {
-		t.Fatalf("token-stable mutation error=%v", err)
+	})
+	if err != nil || third.CurrentVersionID == second.CurrentVersionID || third.Definition.SchemaVersion != "3" {
+		t.Fatalf("schema-version publication=%#v err=%v", third, err)
 	}
 	firstVersion, found, err = store.GetVersion(t.Context(), metadatasdk.DefinitionVersionQuery{
 		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales", SchemaVersion: "1",
@@ -361,6 +377,12 @@ func TestPublicDefinitionStorePublishDisableAndImmutableVersionRoundTrip(t *test
 	if err := store.Disable(t.Context(), metadatasdk.DefinitionDisableCommand{
 		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
 		ExpectedCurrentVersionID: second.CurrentVersionID, DisabledBy: "user:publisher-b",
+	}); metadataErrorCode(err) != "metadata.definition_revision_conflict" {
+		t.Fatalf("second-version stale disable error=%v", err)
+	}
+	if err := store.Disable(t.Context(), metadatasdk.DefinitionDisableCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: third.CurrentVersionID, DisabledBy: "user:publisher-b",
 	}); err != nil {
 		t.Fatal(err)
 	}

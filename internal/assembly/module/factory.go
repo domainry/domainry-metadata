@@ -8,6 +8,7 @@ import (
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/schemaownership"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	metadatasdkadapter "github.com/domainry/domainry-metadata/internal/adapter/metadatasdk"
@@ -24,6 +25,8 @@ func NewFactory() *Factory { return &Factory{} }
 func OwnedTables() []string {
 	return metadatastore.OwnedTables()
 }
+
+func SchemaOwnership() []schemaownership.Table { return metadatastore.SchemaOwnership() }
 
 // OpenDefinitionStore composes Foundation's shared Definition kernel with
 // Metadata's private localization store. Other modules open the Foundation
@@ -47,7 +50,7 @@ func openDefinitionStore(ctx context.Context, application metadatasdk.Applicatio
 	if err != nil {
 		return metadatastore.DefinitionStore{}, err
 	}
-	if err := host.Migrations().ApplyOwnedMigrations(ctx, "metadata", migrations); err != nil {
+	if err := host.Migrations().ApplyOwnedMigrations(ctx, metadatastore.MigrationOwner, migrations); err != nil {
 		return metadatastore.DefinitionStore{}, fmt.Errorf("apply Metadata Module migrations: %w", err)
 	}
 	store := metadatastore.NewDefinitionStoreWithShared(host.Database(), host.Dialect(), shared)
