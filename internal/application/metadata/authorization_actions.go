@@ -11,7 +11,7 @@ import (
 const AuthorizationOwner = "module:metadata"
 
 // AuthorizationActions is Metadata's complete source-owned executable
-// manifest. Transport routes, OpenAPI, capability disclosure and Permission
+// manifest. Transport routes, typed client contracts and Permission
 // reconciliation are projections of this set.
 func AuthorizationActions() ([]actioncontract.ActionDefinition, error) {
 	definitions := []actioncontract.ActionDefinition{

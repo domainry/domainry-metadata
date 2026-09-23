@@ -16,10 +16,10 @@ type dictionaryDefinitionsStub struct {
 func (s dictionaryDefinitionsStub) List(context.Context, metadatasdk.DefinitionQuery) ([]metadatasdk.Definition, error) {
 	return nil, nil
 }
-func (s dictionaryDefinitionsStub) Get(context.Context, string, string) (metadatasdk.Definition, bool, error) {
+func (s dictionaryDefinitionsStub) Get(context.Context, string, string, string) (metadatasdk.Definition, bool, error) {
 	return s.definition, s.found, nil
 }
-func (s dictionaryDefinitionsStub) Snapshot(context.Context) (metadatasdk.DefinitionSnapshot, error) {
+func (s dictionaryDefinitionsStub) Snapshot(context.Context, metadatasdk.DefinitionQuery) (metadatasdk.DefinitionSnapshot, error) {
 	return metadatasdk.DefinitionSnapshot{}, nil
 }
 

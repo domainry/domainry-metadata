@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
-	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
@@ -15,6 +15,94 @@ import (
 )
 
 const localizedTextTableName = "_metadata_localized_texts"
+
+func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatasdk.LocalizedTextResourceSnapshot) error {
+	if err := s.validate(); err != nil {
+		return err
+	}
+	snapshot.WorkspaceID = strings.TrimSpace(snapshot.WorkspaceID)
+	snapshot.EntityType = strings.TrimSpace(snapshot.EntityType)
+	snapshot.EntityKey = strings.TrimSpace(snapshot.EntityKey)
+	snapshot.SourceKind = strings.TrimSpace(snapshot.SourceKind)
+	snapshot.SourceID = strings.TrimSpace(snapshot.SourceID)
+	if snapshot.WorkspaceID == "" || snapshot.EntityType == "" || snapshot.EntityKey == "" || snapshot.SourceKind == "" || snapshot.SourceID == "" {
+		return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_projection_identity_required"}
+	}
+	values := make([]metadatasdk.LocalizedText, 0, len(snapshot.Values))
+	for _, value := range snapshot.Values {
+		value = normalizeLocalizedText(value)
+		value.WorkspaceID = snapshot.WorkspaceID
+		value.EntityType = snapshot.EntityType
+		value.EntityKey = snapshot.EntityKey
+		value.SourceKind = snapshot.SourceKind
+		value.SourceID = snapshot.SourceID
+		if value.Property == "" || value.Locale == "" || value.Text == "" {
+			return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_invalid"}
+		}
+		values = append(values, value)
+	}
+	replace := func(executor modulehost.DBTX) error {
+		return s.replaceLocalizedTextResource(ctx, executor, snapshot, values, time.Now().UTC().Format(time.RFC3339Nano))
+	}
+	if executor := modulehost.ExecutorFromContext(ctx, nil); executor != nil {
+		return replace(executor)
+	}
+	tx, err := s.database.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if err := replace(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, executor modulehost.DBTX, snapshot metadatasdk.LocalizedTextResourceSnapshot, values []metadatasdk.LocalizedText, now string) error {
+	remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Where(query.And(
+		query.Equal("entity_type", snapshot.EntityType), query.Equal("entity_key", snapshot.EntityKey), query.Equal("source_kind", snapshot.SourceKind),
+	)).Build()
+	if err != nil {
+		return err
+	}
+	if _, err := executor.ExecContext(ctx, remove, args...); err != nil {
+		return err
+	}
+	for _, value := range values {
+		identity := localizedTextIdentity(value)
+		lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Columns("id").Where(identity).Build()
+		if err != nil {
+			return err
+		}
+		var existingID string
+		lookupErr := executor.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingID)
+		if lookupErr != nil && lookupErr != sql.ErrNoRows {
+			return lookupErr
+		}
+		if lookupErr == nil {
+			update, updateArgs, err := query.NewWorkspaceUpdateBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).
+				Set("text", value.Text).Set("source_kind", snapshot.SourceKind).Set("source_id", snapshot.SourceID).Set("updated_at", now).
+				Where(identity).Build()
+			if err != nil {
+				return err
+			}
+			if _, err := executor.ExecContext(ctx, update, updateArgs...); err != nil {
+				return err
+			}
+			continue
+		}
+		insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, localizedTextTableName, snapshot.WorkspaceID).Columns(
+			"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
+		).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, snapshot.SourceKind, snapshot.SourceID, now, now).Build()
+		if err != nil {
+			return err
+		}
+		if _, err := executor.ExecContext(ctx, insert, insertArgs...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor modulehost.DBTX, sourceKind, sourceID string, values []metadatasdk.LocalizedText, now string) error {
 	sourceKind, sourceID = strings.TrimSpace(sourceKind), strings.TrimSpace(sourceID)
@@ -82,24 +170,6 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 	return nil
 }
 
-func (s DefinitionStore) replaceProjectionIdentity(ctx context.Context, executor modulehost.DBTX, snapshot metadatasdk.ProjectionSnapshot, now string) error {
-	remove, args, err := query.NewDeleteBuilder(s.dialect, "_metadata_projection").Where(query.Equal("id", "current")).Build()
-	if err != nil {
-		return err
-	}
-	if _, err := executor.ExecContext(ctx, remove, args...); err != nil {
-		return err
-	}
-	insert, args, err := query.NewInsertBuilder(s.dialect, "_metadata_projection").Columns(
-		"id", "schema_version", "source_kind", "source_id", "name", "default_locale", "updated_at",
-	).Values("current", strings.TrimSpace(snapshot.SchemaVersion), strings.TrimSpace(snapshot.SourceKind), strings.TrimSpace(snapshot.SourceID), strings.TrimSpace(snapshot.Name), valueOrDefault(snapshot.DefaultLocale, "en-US"), now).Build()
-	if err != nil {
-		return err
-	}
-	_, err = executor.ExecContext(ctx, insert, args...)
-	return err
-}
-
 func (s DefinitionStore) ListLocalizedTexts(ctx context.Context, queryValue metadatasdk.LocalizedTextQuery) ([]metadatasdk.LocalizedText, error) {
 	if err := s.validate(); err != nil {
 		return nil, err
@@ -148,18 +218,6 @@ func (s DefinitionStore) localizedTextListStatement(queryValue metadatasdk.Local
 	return builder.OrderBy(query.Ascending("entity_type"), query.Ascending("entity_key"), query.Ascending("property"), query.Ascending("locale")).Build()
 }
 
-func (s DefinitionStore) ProjectionName(ctx context.Context) (string, error) {
-	statement, args, err := query.NewSelectBuilder(s.dialect, "_metadata_projection").Columns("name").Where(query.Equal("id", "current")).Build()
-	if err != nil {
-		return "", err
-	}
-	var name string
-	if err := modulehost.ExecutorFromContext(ctx, s.database).QueryRowContext(ctx, statement, args...).Scan(&name); err != nil {
-		return "", fmt.Errorf("load Metadata projection name: %w", err)
-	}
-	return strings.TrimSpace(name), nil
-}
-
 func normalizeLocalizedText(value metadatasdk.LocalizedText) metadatasdk.LocalizedText {
 	value.WorkspaceID = strings.TrimSpace(value.WorkspaceID)
 	value.EntityType = strings.TrimSpace(value.EntityType)
@@ -179,11 +237,4 @@ func localizedTextIdentity(value metadatasdk.LocalizedText) query.Predicate {
 func localizedTextID(value metadatasdk.LocalizedText) string {
 	sum := sha256.Sum256([]byte(value.WorkspaceID + "\x00" + value.EntityType + "\x00" + value.EntityKey + "\x00" + value.Property + "\x00" + value.Locale))
 	return "localized:" + hex.EncodeToString(sum[:16])
-}
-
-func valueOrDefault(value, fallback string) string {
-	if value = strings.TrimSpace(value); value != "" {
-		return value
-	}
-	return fallback
 }

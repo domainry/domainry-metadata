@@ -40,7 +40,7 @@ func (s *DictionaryService) Items(ctx context.Context, query metadatasdk.Diction
 	if query.DictionaryKey == "" {
 		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{StatusCode: 400, Code: "backend.dictionary.missing_key"}
 	}
-	definition, found, err := s.definitions.Get(ctx, "dictionary", query.DictionaryKey)
+	definition, found, err := s.definitions.Get(ctx, metadatasdk.DefinitionOwnerMetadata, "dictionary", query.DictionaryKey)
 	if err != nil {
 		return metadatasdk.DictionaryItems{}, err
 	}

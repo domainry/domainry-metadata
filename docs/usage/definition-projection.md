@@ -20,7 +20,15 @@ Do not edit a projected payload, treat Metadata as the owner of Workflow/Report/
 
 ## How to use
 
-List by bounded resource type/source owner, fetch one stable resource key, inspect source kind/source ID/schema version/hash, and return to the source owner for validation or modification.
+List with an explicit owner (or an explicitly authorized cross-owner query), fetch
+one stable resource key, and use `current_version_id` as the opaque revision
+token. Source owners replace generated catalogs through
+`DefinitionStore.ReplaceSourceSnapshot`. Independent publications use
+`DefinitionStore.Publish` with the current token; a create must use
+`DefinitionNoCurrentVersion`. Disable uses the same token and immutable history
+is read through `GetVersion`. A stale token fails with
+`metadata.definition_revision_conflict`; callers must reread instead of blindly
+overwriting the winner.
 
 ## Adaptation cookbook
 

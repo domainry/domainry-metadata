@@ -13,7 +13,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -94,6 +93,7 @@ func openIntegrationModule(t *testing.T, path string) (*sql.DB, metadatasdk.Bind
 
 func projectionSnapshot(version, objectName string) metadatasdk.ProjectionSnapshot {
 	return metadatasdk.ProjectionSnapshot{
+		Owner:         metadatasdk.DefinitionOwnerMetadata,
 		SchemaVersion: version,
 		SourceKind:    "generated",
 		SourceID:      "application-manifest",
@@ -128,14 +128,14 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 		_ = transaction.Rollback()
 		t.Fatal(err)
 	}
-	if value, found, err := binding.Definitions().Get(transactionContext, "object", "customer"); err != nil || !found || value.SchemaVersion != "rollback-version" {
+	if value, found, err := binding.Definitions().Get(transactionContext, metadatasdk.DefinitionOwnerMetadata, "object", "customer"); err != nil || !found || value.SchemaVersion != "rollback-version" {
 		_ = transaction.Rollback()
 		t.Fatalf("transaction definition=%#v found=%v err=%v", value, found, err)
 	}
 	if err := transaction.Rollback(); err != nil {
 		t.Fatal(err)
 	}
-	if value, found, err := binding.Definitions().Get(t.Context(), "object", "customer"); err != nil || found {
+	if value, found, err := binding.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer"); err != nil || found {
 		t.Fatalf("rolled-back definition=%#v found=%v err=%v", value, found, err)
 	}
 
@@ -155,11 +155,11 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 	if !errors.As(err, &versionConflict) || versionConflict.StatusCode != http.StatusConflict || versionConflict.Code != "backend.metadata.definition_version_conflict" {
 		t.Fatalf("historical version rewrite error=%v", err)
 	}
-	definition, found, err := binding.Definitions().Get(t.Context(), "object", "customer")
+	definition, found, err := binding.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer")
 	if err != nil || !found || definition.SchemaVersion != "2" || definition.Name != "Customer account" || !strings.Contains(string(definition.Payload), "Customer account") {
 		t.Fatalf("published definition=%#v found=%v err=%v", definition, found, err)
 	}
-	definitions, err := binding.Definitions().List(t.Context(), metadatasdk.DefinitionQuery{ResourceType: "object"})
+	definitions, err := binding.Definitions().List(t.Context(), metadatasdk.DefinitionQuery{Owner: metadatasdk.DefinitionOwnerMetadata, ResourceType: "object"})
 	if err != nil || len(definitions) != 1 || definitions[0].ResourceKey != "customer" {
 		t.Fatalf("definitions=%#v err=%v", definitions, err)
 	}
@@ -168,7 +168,7 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 		t.Fatalf("dictionary items=%#v err=%v", items, err)
 	}
 	var objectVersions int
-	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _metadata_definition_versions WHERE resource_type = ? AND resource_key = ?`, "object", "customer").Scan(&objectVersions); err != nil || objectVersions != 2 {
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions WHERE kind = ? AND definition_key = ?`, "object", "customer").Scan(&objectVersions); err != nil || objectVersions != 2 {
 		t.Fatalf("object versions=%d err=%v", objectVersions, err)
 	}
 	if err := binding.Close(t.Context()); err != nil {
@@ -184,7 +184,7 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 	if owners := reopenedRegistrar.appliedOwners(); len(owners) != 1 || owners[0] != "metadata" {
 		t.Fatalf("reopened migration owners=%v", owners)
 	}
-	definition, found, err = reopened.Definitions().Get(t.Context(), "object", "customer")
+	definition, found, err = reopened.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer")
 	if err != nil || !found || definition.SchemaVersion != "2" || definition.Name != "Customer account" {
 		t.Fatalf("reopened definition=%#v found=%v err=%v", definition, found, err)
 	}
@@ -247,40 +247,168 @@ func TestPublicModuleRejectsConcurrentDefinitionVersionConflict(t *testing.T) {
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("publication outcomes successes=%d conflicts=%d errors=%v", successes, conflicts, errorsByCandidate)
 	}
-	definition, found, err := binding.Definitions().Get(t.Context(), "object", "customer")
+	definition, found, err := binding.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer")
 	if err != nil || !found || definition.SchemaVersion != "2" {
 		t.Fatalf("winning definition=%#v found=%v err=%v", definition, found, err)
 	}
 	var versions int
-	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _metadata_definition_versions WHERE resource_type = ? AND resource_key = ?`, "object", "customer").Scan(&versions); err != nil || versions != 2 {
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions WHERE kind = ? AND definition_key = ?`, "object", "customer").Scan(&versions); err != nil || versions != 2 {
 		t.Fatalf("definition versions=%d err=%v", versions, err)
 	}
 }
 
-func TestPublicModuleCapabilityDoesNotReintroduceDictionaryAuthoring(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "metadata-capability.db")
+func TestPublicDefinitionStorePublishDisableAndImmutableVersionRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "definition-store.db")
 	database, binding, _ := openIntegrationModule(t, path)
 	defer database.Close()
 	defer binding.Close(t.Context())
-	summary, err := binding.CapabilitySummary(t.Context())
+	store := binding.DefinitionStore()
+	first, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: metadatasdk.DefinitionNoCurrentVersion, SchemaVersion: "1",
+		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Daily sales"}`),
+		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-a",
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = binding.ValidateCapabilityCandidate(t.Context(), modulecapability.ValidationRequest{
-		ContractVersion: modulecapability.ValidationContractVersion,
-		ModuleKey:       "metadata",
-		CategoryKey:     metadatasdk.CapabilityMetadataDictionaries,
-		ContractSHA256:  summary.Identity.ContractSHA256,
-		Kind:            "metadata.dictionary",
-		Candidate: modulecapability.AuthoringFragment{
-			Collection: "dictionaries",
-			Key:        "status",
-			Value:      json.RawMessage(`{"key":"status","items":[{"key":"active"},{"key":"active"}]}`),
-		},
-	})
-	if err == nil || !strings.Contains(err.Error(), "module_capability.validation_scope_invalid") {
-		t.Fatalf("Metadata accepted a competing Dictionary authoring candidate: %v", err)
+	if first.CurrentVersionID == "" || first.Definition.CurrentVersionID != first.CurrentVersionID || first.Definition.Status != "active" || first.Definition.PublishedBy != "user:publisher-a" {
+		t.Fatalf("first publication=%#v", first)
 	}
+	firstVersion, found, err := store.GetVersion(t.Context(), metadatasdk.DefinitionVersionQuery{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales", VersionID: first.CurrentVersionID,
+	})
+	if err != nil || !found || firstVersion.SchemaVersion != "1" || !strings.Contains(string(firstVersion.Payload), "Daily sales") {
+		t.Fatalf("first version=%#v found=%t err=%v", firstVersion, found, err)
+	}
+	if _, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: metadatasdk.DefinitionNoCurrentVersion, SchemaVersion: "2",
+		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Stale"}`),
+		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-b",
+	}); metadataErrorCode(err) != "metadata.definition_revision_conflict" {
+		t.Fatalf("stale create error=%v", err)
+	}
+	second, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: first.CurrentVersionID, SchemaVersion: "2",
+		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Daily sales v2"}`),
+		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-b",
+	})
+	if err != nil || second.CurrentVersionID == first.CurrentVersionID {
+		t.Fatalf("second publication=%#v err=%v", second, err)
+	}
+	replayed, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: second.CurrentVersionID, SchemaVersion: "2",
+		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Daily sales v2"}`),
+		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-b",
+	})
+	if err != nil || replayed.CurrentVersionID != second.CurrentVersionID {
+		t.Fatalf("idempotent replay=%#v err=%v", replayed, err)
+	}
+	if _, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: second.CurrentVersionID, SchemaVersion: "3",
+		Payload:    json.RawMessage(`{"key":"daily-sales","name":"Daily sales v2"}`),
+		SourceKind: "report_registry", SourceID: "reports", PublishedBy: "user:publisher-b",
+	}); metadataErrorCode(err) != "metadata.definition_revision_conflict" {
+		t.Fatalf("token-stable mutation error=%v", err)
+	}
+	firstVersion, found, err = store.GetVersion(t.Context(), metadatasdk.DefinitionVersionQuery{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales", SchemaVersion: "1",
+	})
+	if err != nil || !found || !strings.Contains(string(firstVersion.Payload), "Daily sales\"") || strings.Contains(string(firstVersion.Payload), "v2") {
+		t.Fatalf("immutable first version=%#v found=%t err=%v", firstVersion, found, err)
+	}
+	if err := store.Disable(t.Context(), metadatasdk.DefinitionDisableCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: first.CurrentVersionID, DisabledBy: "user:publisher-a",
+	}); metadataErrorCode(err) != "metadata.definition_revision_conflict" {
+		t.Fatalf("stale disable error=%v", err)
+	}
+	if err := store.Disable(t.Context(), metadatasdk.DefinitionDisableCommand{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales",
+		ExpectedCurrentVersionID: second.CurrentVersionID, DisabledBy: "user:publisher-b",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if value, found, err := store.Get(t.Context(), metadatasdk.DefinitionOwnerReport, "report", "daily-sales"); err != nil || found {
+		t.Fatalf("disabled definition=%#v found=%t err=%v", value, found, err)
+	}
+	secondVersion, found, err := store.GetVersion(t.Context(), metadatasdk.DefinitionVersionQuery{
+		Owner: metadatasdk.DefinitionOwnerReport, ResourceType: "report", ResourceKey: "daily-sales", VersionID: second.CurrentVersionID,
+	})
+	if err != nil || !found || secondVersion.SchemaVersion != "2" {
+		t.Fatalf("disabled current version=%#v found=%t err=%v", secondVersion, found, err)
+	}
+}
+
+func TestPublicDefinitionStoreConcurrentPublicationUsesSingleCASRevision(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "definition-store-cas.db")
+	database, binding, _ := openIntegrationModule(t, path)
+	defer database.Close()
+	defer binding.Close(t.Context())
+	store := binding.DefinitionStore()
+	base, err := store.Publish(t.Context(), metadatasdk.DefinitionPublishCommand{
+		Owner: metadatasdk.DefinitionOwnerScheduler, ResourceType: "scheduler", ResourceKey: "nightly",
+		ExpectedCurrentVersionID: metadatasdk.DefinitionNoCurrentVersion, SchemaVersion: "1", Payload: json.RawMessage(`{"key":"nightly","cron":"0 0 * * *"}`),
+		SourceKind: "scheduler_registry", SourceID: "schedules", PublishedBy: "system:startup",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	commands := []metadatasdk.DefinitionPublishCommand{
+		{Owner: metadatasdk.DefinitionOwnerScheduler, ResourceType: "scheduler", ResourceKey: "nightly", ExpectedCurrentVersionID: base.CurrentVersionID, SchemaVersion: "2-a", Payload: json.RawMessage(`{"key":"nightly","cron":"0 1 * * *"}`), SourceKind: "scheduler_registry", SourceID: "schedules", PublishedBy: "user:a"},
+		{Owner: metadatasdk.DefinitionOwnerScheduler, ResourceType: "scheduler", ResourceKey: "nightly", ExpectedCurrentVersionID: base.CurrentVersionID, SchemaVersion: "2-b", Payload: json.RawMessage(`{"key":"nightly","cron":"0 2 * * *"}`), SourceKind: "scheduler_registry", SourceID: "schedules", PublishedBy: "user:b"},
+	}
+	start := make(chan struct{})
+	results := make([]metadatasdk.DefinitionPublishResult, len(commands))
+	errorsByCandidate := make([]error, len(commands))
+	var wait sync.WaitGroup
+	wait.Add(len(commands))
+	for index := range commands {
+		go func(index int) {
+			defer wait.Done()
+			<-start
+			results[index], errorsByCandidate[index] = store.Publish(t.Context(), commands[index])
+		}(index)
+	}
+	close(start)
+	wait.Wait()
+	successes, conflicts := 0, 0
+	winner := ""
+	for index, err := range errorsByCandidate {
+		if err == nil {
+			successes++
+			winner = results[index].CurrentVersionID
+			continue
+		}
+		if metadataErrorCode(err) == "metadata.definition_revision_conflict" {
+			conflicts++
+			continue
+		}
+		t.Fatalf("unexpected concurrent CAS error=%v", err)
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("CAS outcomes successes=%d conflicts=%d errors=%v", successes, conflicts, errorsByCandidate)
+	}
+	current, found, err := store.Get(t.Context(), metadatasdk.DefinitionOwnerScheduler, "scheduler", "nightly")
+	if err != nil || !found || current.CurrentVersionID != winner {
+		t.Fatalf("current definition=%#v winner=%q found=%t err=%v", current, winner, found, err)
+	}
+	var versions int
+	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _definition_versions WHERE owner = ? AND kind = ? AND definition_key = ?`, metadatasdk.DefinitionOwnerScheduler, "scheduler", "nightly").Scan(&versions); err != nil || versions != 2 {
+		t.Fatalf("CAS versions=%d err=%v", versions, err)
+	}
+}
+
+func metadataErrorCode(err error) string {
+	var metadataError *metadatasdk.Error
+	if errors.As(err, &metadataError) {
+		return metadataError.Code
+	}
+	return ""
 }
 
 func TestPublicHTTPAdapterEnforcesWorkspaceAndExactAction(t *testing.T) {

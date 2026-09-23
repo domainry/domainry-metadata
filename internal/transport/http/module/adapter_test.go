@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
-	"github.com/domainry/domainry-foundation/modulecapability"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -57,7 +56,7 @@ func TestSurfaceUsesAuthenticatedWorkspaceForDefinitionsAndDictionaries(t *testi
 	request = request.WithContext(identitysdk.WithRequestIdentity(request.Context(), identitysdk.RequestIdentity{Principal: principal}))
 	response := httptest.NewRecorder()
 	adapter.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || definitions.query.ResourceType != "object" {
+	if response.Code != http.StatusOK || definitions.query.Owner != metadatasdk.DefinitionOwnerMetadata || definitions.query.ResourceType != "object" {
 		t.Fatalf("definition response=%d query=%#v body=%s", response.Code, definitions.query, response.Body.String())
 	}
 	if response.Header().Get("ETag") == "" {
@@ -190,14 +189,13 @@ func metadataTestPrincipal(actionKey string) identitysdk.Principal {
 }
 
 type testBinding struct {
-	modulecapability.Binding
 	definitions  metadatasdk.Definitions
 	localization metadatasdk.Localization
 	dictionaries metadatasdk.Dictionaries
 }
 
 func (binding testBinding) Descriptor() metadatasdk.Descriptor {
-	return metadatasdk.Descriptor{ProtocolVersion: metadatasdk.ProtocolVersionV1, Mode: metadatasdk.DeploymentModeModule, Capabilities: []string{"definitions", "localization", "dictionaries", "projection"}}
+	return metadatasdk.Descriptor{ProtocolVersion: metadatasdk.ProtocolVersionV1, Mode: metadatasdk.DeploymentModeModule, Capabilities: []string{"definitions", "definition_store", "localization", "dictionaries", "projection"}}
 }
 
 func (binding testBinding) Definitions() metadatasdk.Definitions {
@@ -205,6 +203,10 @@ func (binding testBinding) Definitions() metadatasdk.Definitions {
 		return binding.definitions
 	}
 	return &testDefinitions{}
+}
+
+func (binding testBinding) DefinitionStore() metadatasdk.DefinitionStore {
+	return testDefinitionStore{Definitions: binding.Definitions()}
 }
 
 func (binding testBinding) Localization() metadatasdk.Localization {
@@ -231,18 +233,33 @@ type testDefinitions struct {
 	getCalls  int
 }
 
+type testDefinitionStore struct{ metadatasdk.Definitions }
+
+func (testDefinitionStore) ReplaceSourceSnapshot(context.Context, metadatasdk.ProjectionSnapshot) error {
+	return nil
+}
+func (testDefinitionStore) Publish(context.Context, metadatasdk.DefinitionPublishCommand) (metadatasdk.DefinitionPublishResult, error) {
+	return metadatasdk.DefinitionPublishResult{}, nil
+}
+func (testDefinitionStore) Disable(context.Context, metadatasdk.DefinitionDisableCommand) error {
+	return nil
+}
+func (testDefinitionStore) GetVersion(context.Context, metadatasdk.DefinitionVersionQuery) (metadatasdk.DefinitionVersion, bool, error) {
+	return metadatasdk.DefinitionVersion{}, false, nil
+}
+
 func (definitions *testDefinitions) List(_ context.Context, query metadatasdk.DefinitionQuery) ([]metadatasdk.Definition, error) {
 	definitions.query = query
 	definitions.listCalls++
 	return definitions.values, nil
 }
 
-func (definitions *testDefinitions) Get(context.Context, string, string) (metadatasdk.Definition, bool, error) {
+func (definitions *testDefinitions) Get(context.Context, string, string, string) (metadatasdk.Definition, bool, error) {
 	definitions.getCalls++
 	return metadatasdk.Definition{}, false, nil
 }
 
-func (*testDefinitions) Snapshot(context.Context) (metadatasdk.DefinitionSnapshot, error) {
+func (*testDefinitions) Snapshot(context.Context, metadatasdk.DefinitionQuery) (metadatasdk.DefinitionSnapshot, error) {
 	return metadatasdk.DefinitionSnapshot{}, nil
 }
 

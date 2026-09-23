@@ -10,7 +10,6 @@ import (
 
 type localizationRepository interface {
 	ListLocalizedTexts(context.Context, metadatasdk.LocalizedTextQuery) ([]metadatasdk.LocalizedText, error)
-	ProjectionName(context.Context) (string, error)
 }
 
 type LocalizationApplicationService struct {
@@ -43,15 +42,26 @@ func (s *LocalizationApplicationService) Coverage(ctx context.Context, query met
 	if err != nil {
 		return metadatasdk.LocalizedTextCoverage{}, err
 	}
-	snapshot, err := s.definitions.Snapshot(ctx)
+	snapshot, err := s.definitions.Snapshot(ctx, metadatasdk.DefinitionQuery{CrossOwner: true})
 	if err != nil {
 		return metadatasdk.LocalizedTextCoverage{}, err
 	}
-	name, err := s.repository.ProjectionName(ctx)
-	if err != nil {
-		return metadatasdk.LocalizedTextCoverage{}, err
-	}
+	name := latestApplicationDefinitionName(snapshot.Definitions)
 	return metadatadomain.LocalizedTextCoverage(query, name, snapshot.Definitions, values), nil
+}
+
+func latestApplicationDefinitionName(definitions []metadatasdk.Definition) string {
+	name, latest := "", ""
+	for _, definition := range definitions {
+		if definition.ResourceType != "application" {
+			continue
+		}
+		order := strings.TrimSpace(definition.UpdatedAt) + "\x00" + strings.TrimSpace(definition.ResourceKey)
+		if order >= latest {
+			latest, name = order, strings.TrimSpace(definition.Name)
+		}
+	}
+	return name
 }
 
 var _ metadatasdk.Localization = (*LocalizationApplicationService)(nil)
