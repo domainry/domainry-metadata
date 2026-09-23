@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -34,21 +36,27 @@ func (h integrationHost) Dialect() modulehost.Dialect               { return h.d
 func (h integrationHost) Migrations() modulehost.MigrationRegistrar { return h.registrar }
 
 type integrationMigrationRegistrar struct {
-	runner *ormmigration.Runner
-	mu     sync.Mutex
-	owners []string
+	database *sql.DB
+	renderer modulehost.Dialect
+	mu       sync.Mutex
+	owners   []string
 }
 
 func (*integrationMigrationRegistrar) Driver() string { return "sqlite" }
 func (*integrationMigrationRegistrar) Schema() string { return "" }
 func (r *integrationMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context, owner string, migrations []modulehost.SchemaMigration) error {
-	if owner != "metadata" {
+	if owner != "metadata" && owner != shareddefinition.MigrationOwner {
 		return fmt.Errorf("unexpected migration owner %q", owner)
 	}
 	r.mu.Lock()
 	r.owners = append(r.owners, owner)
 	r.mu.Unlock()
-	return r.runner.Apply(ctx, migrations)
+	ledger := "_schema_migrations_" + strings.ReplaceAll(owner, "/", "_")
+	runner, err := ormmigration.NewRunner(r.database, r.renderer, ormmigration.Options{LedgerTable: ledger})
+	if err != nil {
+		return err
+	}
+	return runner.Apply(ctx, migrations)
 }
 
 func (r *integrationMigrationRegistrar) appliedOwners() []string {
@@ -75,12 +83,7 @@ func openIntegrationModule(t *testing.T, path string) (*sql.DB, metadatasdk.Bind
 		t.Fatal(err)
 	}
 	renderer := dialect.WithSchema("")
-	runner, err := ormmigration.NewRunner(database, renderer, ormmigration.Options{})
-	if err != nil {
-		_ = database.Close()
-		t.Fatal(err)
-	}
-	registrar := &integrationMigrationRegistrar{runner: runner}
+	registrar := &integrationMigrationRegistrar{database: database, renderer: renderer}
 	binding, err := metadatamodule.NewFactory().OpenModule(t.Context(), metadatasdk.ApplicationRef{InstallationID: "integration-installation"}, integrationHost{
 		database: database, dialect: renderer, registrar: registrar,
 	})
@@ -114,7 +117,7 @@ func projectionSnapshot(version, objectName string) metadatasdk.ProjectionSnapsh
 func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "metadata.db")
 	database, binding, registrar := openIntegrationModule(t, path)
-	if owners := registrar.appliedOwners(); len(owners) != 1 || owners[0] != "metadata" {
+	if owners := registrar.appliedOwners(); !reflect.DeepEqual(owners, []string{shareddefinition.MigrationOwner, "metadata"}) {
 		t.Fatalf("migration owners=%v", owners)
 	}
 
@@ -181,19 +184,21 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 	reopenedDatabase, reopened, reopenedRegistrar := openIntegrationModule(t, path)
 	defer reopenedDatabase.Close()
 	defer reopened.Close(t.Context())
-	if owners := reopenedRegistrar.appliedOwners(); len(owners) != 1 || owners[0] != "metadata" {
+	if owners := reopenedRegistrar.appliedOwners(); !reflect.DeepEqual(owners, []string{shareddefinition.MigrationOwner, "metadata"}) {
 		t.Fatalf("reopened migration owners=%v", owners)
 	}
 	definition, found, err = reopened.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer")
 	if err != nil || !found || definition.SchemaVersion != "2" || definition.Name != "Customer account" {
 		t.Fatalf("reopened definition=%#v found=%v err=%v", definition, found, err)
 	}
-	var ledgerRows int
-	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _schema_migrations`).Scan(&ledgerRows); err != nil || ledgerRows != 1 {
-		t.Fatalf("host migration ledger rows=%d err=%v", ledgerRows, err)
+	for _, ledger := range []string{"_schema_migrations_shared_definitions", "_schema_migrations_metadata"} {
+		var ledgerRows int
+		if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM `+ledger).Scan(&ledgerRows); err != nil || ledgerRows != 1 {
+			t.Fatalf("host migration ledger=%s rows=%d err=%v", ledger, ledgerRows, err)
+		}
 	}
 	var ledgers int
-	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE '%schema_migrations%'`).Scan(&ledgers); err != nil || ledgers != 1 {
+	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE '%schema_migrations%'`).Scan(&ledgers); err != nil || ledgers != 2 {
 		t.Fatalf("migration ledger tables=%d err=%v", ledgers, err)
 	}
 	for _, table := range metadatamodule.OwnedTables() {

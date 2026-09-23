@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
 	ormdialect "github.com/domainry/domainry-orm/dialect"
@@ -15,12 +16,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestMetadataMigrationOwnsDefinitionCatalog(t *testing.T) {
+func TestMetadataMigrationOwnsOnlyLocalization(t *testing.T) {
 	migrations, err := SchemaMigrations("sqlite", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Name != "metadata_catalog" {
+	if len(migrations) != 1 || migrations[0].Version != 1 || migrations[0].Name != "metadata_localization" {
 		t.Fatalf("migrations=%#v", migrations)
 	}
 	database, err := sql.Open("sqlite", ":memory:")
@@ -41,6 +42,12 @@ func TestMetadataMigrationOwnsDefinitionCatalog(t *testing.T) {
 			t.Fatalf("table=%s count=%d err=%v", table, count, err)
 		}
 	}
+	for _, sharedTable := range shareddefinition.OwnedTables() {
+		var count int
+		if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, sharedTable).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("shared table must not be owned by Metadata migration: table=%s count=%d err=%v", sharedTable, count, err)
+		}
+	}
 	for _, retired := range []string{"_metadata_projection", "_metadata_definitions", "_metadata_definition_versions"} {
 		var count int
 		if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?`, retired).Scan(&count); err != nil || count != 0 {
@@ -58,26 +65,20 @@ func TestMetadataMigrationOwnsDefinitionCatalog(t *testing.T) {
 	}
 }
 
-func TestDefinitionSchemaRendersForEverySupportedORMDialect(t *testing.T) {
+func TestMetadataLocalizationSchemaRendersForEverySupportedORMDialect(t *testing.T) {
 	for _, driver := range []string{"sqlite", "postgres", "mysql"} {
 		t.Run(driver, func(t *testing.T) {
 			migrations, err := SchemaMigrations(driver, "metadata_scope")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(migrations) != 1 || len(migrations[0].Statements) != 3 {
+			if len(migrations) != 1 || len(migrations[0].Statements) != 1 {
 				t.Fatalf("migrations=%#v", migrations)
 			}
-			definitionDDL := migrations[0].Statements[0]
-			versionDDL := migrations[0].Statements[1]
-			for _, requiredFragment := range []string{"_definitions", "installation_id", "owner", "kind", "definition_key", "current_version_id"} {
-				if !strings.Contains(definitionDDL, requiredFragment) {
-					t.Fatalf("%s definition DDL missing %q: %s", driver, requiredFragment, definitionDDL)
-				}
-			}
-			for _, requiredFragment := range []string{"_definition_versions", "definition_id", "schema_version", "schema_hash"} {
-				if !strings.Contains(versionDDL, requiredFragment) {
-					t.Fatalf("%s definition-version DDL missing %q: %s", driver, requiredFragment, versionDDL)
+			localizationDDL := migrations[0].Statements[0]
+			for _, requiredFragment := range []string{"_metadata_localized_texts", "workspace_id", "entity_type", "entity_key", "property", "locale"} {
+				if !strings.Contains(localizationDDL, requiredFragment) {
+					t.Fatalf("%s localization DDL missing %q: %s", driver, requiredFragment, localizationDDL)
 				}
 			}
 		})
@@ -168,17 +169,7 @@ func localizedTextTestStore(t *testing.T) (*sql.DB, DefinitionStore) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	migrations, err := SchemaMigrations("sqlite", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, migration := range migrations {
-		for _, statement := range migration.Statements {
-			if _, err := database.ExecContext(t.Context(), statement); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
+	applyTestSchema(t, database)
 	dialect, err := ormdialect.New(ormdialect.SQLite)
 	if err != nil {
 		t.Fatal(err)
@@ -192,17 +183,7 @@ func TestDefinitionStoreSynchronizesAndReadsOwnedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	migrations, err := SchemaMigrations("sqlite", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, migration := range migrations {
-		for _, statement := range migration.Statements {
-			if _, err := database.ExecContext(t.Context(), statement); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
+	applyTestSchema(t, database)
 	dialect, _ := ormdialect.New(ormdialect.SQLite)
 	store := NewDefinitionStore(database, dialect.WithSchema(""), "test-installation")
 	first := metadatasdk.ProjectionSnapshot{Owner: metadatasdk.DefinitionOwnerMetadata, SchemaVersion: "1", SourceKind: "manifest", SourceID: "app", Definitions: []metadatasdk.Definition{
@@ -323,17 +304,7 @@ func TestProjectionParticipatesInHostTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer database.Close()
-	migrations, err := SchemaMigrations("sqlite", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, migration := range migrations {
-		for _, statement := range migration.Statements {
-			if _, err := database.ExecContext(t.Context(), statement); err != nil {
-				t.Fatal(err)
-			}
-		}
-	}
+	applyTestSchema(t, database)
 	dialect, _ := ormdialect.New(ormdialect.SQLite)
 	store := NewDefinitionStore(database, dialect.WithSchema(""), "test-installation")
 	tx, err := database.BeginTx(t.Context(), nil)
@@ -365,6 +336,25 @@ func TestProjectionParticipatesInHostTransaction(t *testing.T) {
 	var localized int
 	if err := database.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _metadata_localized_texts`).Scan(&localized); err != nil || localized != 0 {
 		t.Fatalf("rolled-back localized rows=%d err=%v", localized, err)
+	}
+}
+
+func applyTestSchema(t *testing.T, database *sql.DB) {
+	t.Helper()
+	shared, err := shareddefinition.SchemaMigrations("sqlite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	local, err := SchemaMigrations("sqlite", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, migration := range append(shared, local...) {
+		for _, statement := range migration.Statements {
+			if _, err := database.ExecContext(t.Context(), statement); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 }
 

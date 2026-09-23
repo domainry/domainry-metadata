@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	"github.com/domainry/domainry-metadata-sdk/modulehost"
@@ -24,11 +25,9 @@ func OwnedTables() []string {
 	return metadatastore.OwnedTables()
 }
 
-// OpenDefinitionStore installs Metadata's canonical tables in the database
-// selected by the caller and constructs a store local to that module. Module
-// hosts share the physical tables by supplying the same database; standalone
-// services get an independent copy by supplying their own database. The Store
-// itself never crosses a module Host boundary.
+// OpenDefinitionStore composes Foundation's shared Definition kernel with
+// Metadata's private localization store. Other modules open the Foundation
+// kernel directly and do not depend on Metadata for persistence.
 func OpenDefinitionStore(ctx context.Context, application metadatasdk.ApplicationRef, host modulehost.Host) (metadatasdk.DefinitionStore, error) {
 	return openDefinitionStore(ctx, application, host)
 }
@@ -40,6 +39,10 @@ func openDefinitionStore(ctx context.Context, application metadatasdk.Applicatio
 	if host == nil || host.Database() == nil || host.Dialect() == nil || host.Migrations() == nil {
 		return metadatastore.DefinitionStore{}, fmt.Errorf("Metadata Module persistence host is incomplete")
 	}
+	shared, err := shareddefinition.Open(ctx, application.InstallationID, host.Database(), host.Dialect(), host.Migrations())
+	if err != nil {
+		return metadatastore.DefinitionStore{}, err
+	}
 	migrations, err := metadatastore.SchemaMigrationsForDialect(host.Dialect(), host.Migrations().Driver())
 	if err != nil {
 		return metadatastore.DefinitionStore{}, err
@@ -47,7 +50,7 @@ func openDefinitionStore(ctx context.Context, application metadatasdk.Applicatio
 	if err := host.Migrations().ApplyOwnedMigrations(ctx, "metadata", migrations); err != nil {
 		return metadatastore.DefinitionStore{}, fmt.Errorf("apply Metadata Module migrations: %w", err)
 	}
-	store := metadatastore.NewDefinitionStore(host.Database(), host.Dialect(), application.InstallationID)
+	store := metadatastore.NewDefinitionStoreWithShared(host.Database(), host.Dialect(), shared)
 	return store, nil
 }
 
