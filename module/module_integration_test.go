@@ -37,7 +37,6 @@ func (h integrationHost) Migrations() modulehost.MigrationRegistrar { return h.r
 
 type integrationMigrationRegistrar struct {
 	database *sql.DB
-	renderer modulehost.Dialect
 	mu       sync.Mutex
 	owners   []string
 }
@@ -49,14 +48,43 @@ func (r *integrationMigrationRegistrar) ApplyOwnedMigrations(ctx context.Context
 		return fmt.Errorf("unexpected migration owner %q", owner)
 	}
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.owners = append(r.owners, owner)
-	r.mu.Unlock()
-	ledger := "_schema_migrations_" + strings.ReplaceAll(owner, "/", "_")
-	runner, err := ormmigration.NewRunner(r.database, r.renderer, ormmigration.Options{LedgerTable: ledger})
-	if err != nil {
+	if _, err := r.database.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS _schema_migrations (owner TEXT NOT NULL, version INTEGER NOT NULL, name TEXT NOT NULL, checksum TEXT NOT NULL, PRIMARY KEY (owner, version))`); err != nil {
 		return err
 	}
-	return runner.Apply(ctx, migrations)
+	for _, migration := range migrations {
+		checksum := ormmigration.Checksum(migration)
+		var applied string
+		err := r.database.QueryRowContext(ctx, `SELECT checksum FROM _schema_migrations WHERE owner = ? AND version = ?`, owner, migration.Version).Scan(&applied)
+		if err == nil {
+			if applied != checksum {
+				return fmt.Errorf("migration checksum changed for %s/%d", owner, migration.Version)
+			}
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		tx, err := r.database.BeginTx(ctx, nil)
+		if err != nil {
+			return err
+		}
+		for _, statement := range migration.Statements {
+			if _, err = tx.ExecContext(ctx, statement); err != nil {
+				_ = tx.Rollback()
+				return err
+			}
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO _schema_migrations (owner, version, name, checksum) VALUES (?, ?, ?, ?)`, owner, migration.Version, migration.Name, checksum); err != nil {
+			_ = tx.Rollback()
+			return err
+		}
+		if err = tx.Commit(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *integrationMigrationRegistrar) appliedOwners() []string {
@@ -83,7 +111,7 @@ func openIntegrationModule(t *testing.T, path string) (*sql.DB, metadatasdk.Bind
 		t.Fatal(err)
 	}
 	renderer := dialect.WithSchema("")
-	registrar := &integrationMigrationRegistrar{database: database, renderer: renderer}
+	registrar := &integrationMigrationRegistrar{database: database}
 	binding, err := metadatamodule.NewFactory().OpenModule(t.Context(), metadatasdk.ApplicationRef{InstallationID: "integration-installation"}, integrationHost{
 		database: database, dialect: renderer, registrar: registrar,
 	})
@@ -191,14 +219,12 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 	if err != nil || !found || definition.SchemaVersion != "2" || definition.Name != "Customer account" {
 		t.Fatalf("reopened definition=%#v found=%v err=%v", definition, found, err)
 	}
-	for _, ledger := range []string{"_schema_migrations_shared_definitions", "_schema_migrations_metadata"} {
-		var ledgerRows int
-		if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM `+ledger).Scan(&ledgerRows); err != nil || ledgerRows != 1 {
-			t.Fatalf("host migration ledger=%s rows=%d err=%v", ledger, ledgerRows, err)
-		}
+	var ledgerRows int
+	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM _schema_migrations WHERE owner IN (?, ?)`, shareddefinition.MigrationOwner, "metadata").Scan(&ledgerRows); err != nil || ledgerRows != 2 {
+		t.Fatalf("host migration ledger rows=%d err=%v", ledgerRows, err)
 	}
 	var ledgers int
-	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE '%schema_migrations%'`).Scan(&ledgers); err != nil || ledgers != 2 {
+	if err := reopenedDatabase.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name LIKE '%schema_migrations%'`).Scan(&ledgers); err != nil || ledgers != 1 {
 		t.Fatalf("migration ledger tables=%d err=%v", ledgers, err)
 	}
 	for _, table := range metadatamodule.OwnedTables() {
