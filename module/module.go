@@ -11,3 +11,4 @@ type Factory = moduleassembly.Factory
 func NewFactory() *Factory { return moduleassembly.NewFactory() }
 
 var OwnedTables = moduleassembly.OwnedTables
+var OpenDefinitionStore = moduleassembly.OpenDefinitionStore
