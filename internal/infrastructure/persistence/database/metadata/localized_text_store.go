@@ -40,7 +40,7 @@ func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatas
 		values = append(values, value)
 	}
 	replace := func(executor modulehost.DBTX) error {
-		return s.replaceLocalizedTextResource(ctx, executor, snapshot, values, time.Now().UTC().Format(time.RFC3339Nano))
+		return s.replaceLocalizedTextResource(ctx, executor, snapshot, values, time.Now().UTC().UnixMilli())
 	}
 	if executor := modulehost.ExecutorFromContext(ctx, nil); executor != nil {
 		return replace(executor)
@@ -56,7 +56,7 @@ func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatas
 	return tx.Commit()
 }
 
-func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, executor modulehost.DBTX, snapshot metadatasdk.LocalizedTextResourceSnapshot, values []metadatasdk.LocalizedText, now string) error {
+func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, executor modulehost.DBTX, snapshot metadatasdk.LocalizedTextResourceSnapshot, values []metadatasdk.LocalizedText, now int64) error {
 	remove, args, err := query.NewWorkspaceDeleteBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Where(query.And(
 		query.Equal("entity_type", snapshot.EntityType), query.Equal("entity_key", snapshot.EntityKey), query.Equal("source_kind", snapshot.SourceKind),
 	)).Build()
@@ -102,7 +102,7 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 	return nil
 }
 
-func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor modulehost.DBTX, sourceKind, sourceID string, values []metadatasdk.LocalizedText, now string) error {
+func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor modulehost.DBTX, sourceKind, sourceID string, values []metadatasdk.LocalizedText, now int64) error {
 	sourceKind, sourceID = strings.TrimSpace(sourceKind), strings.TrimSpace(sourceID)
 	byWorkspace := map[string][]metadatasdk.LocalizedText{}
 	for _, value := range values {
@@ -184,9 +184,12 @@ func (s DefinitionStore) ListLocalizedTexts(ctx context.Context, queryValue meta
 	values := []metadatasdk.LocalizedText{}
 	for rows.Next() {
 		var value metadatasdk.LocalizedText
-		if err := rows.Scan(&value.WorkspaceID, &value.EntityType, &value.EntityKey, &value.Property, &value.Locale, &value.Text, &value.SourceKind, &value.SourceID, &value.CreatedAt, &value.UpdatedAt); err != nil {
+		var createdAt, updatedAt int64
+		if err := rows.Scan(&value.WorkspaceID, &value.EntityType, &value.EntityKey, &value.Property, &value.Locale, &value.Text, &value.SourceKind, &value.SourceID, &createdAt, &updatedAt); err != nil {
 			return nil, err
 		}
+		value.CreatedAt = time.UnixMilli(createdAt).UTC().Format(time.RFC3339Nano)
+		value.UpdatedAt = time.UnixMilli(updatedAt).UTC().Format(time.RFC3339Nano)
 		values = append(values, value)
 	}
 	return values, rows.Err()

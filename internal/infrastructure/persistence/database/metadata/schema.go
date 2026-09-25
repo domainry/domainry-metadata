@@ -37,8 +37,8 @@ func SchemaMigrationsForDialect(renderer modulehost.Dialect, driver string) ([]m
 		required("entity_type", ormschema.TextKey(255)), required("entity_key", ormschema.TextKey(255)),
 		required("property", ormschema.TextKey(255)), required("locale", ormschema.TextKey(255)),
 		required("text", ormschema.LongText()), required("source_kind", ormschema.TextKey(255)),
-		required("source_id", ormschema.TextKey(255)), required("created_at", ormschema.TextKey(255)),
-		required("updated_at", ormschema.TextKey(255)),
+		required("source_id", ormschema.TextKey(255)), required("created_at", ormschema.BigInt()),
+		required("updated_at", ormschema.BigInt()),
 	).PrimaryKey("workspace_id", "id").Unique("workspace_id", "entity_type", "entity_key", "property", "locale").Build()
 	if err != nil {
 		return nil, fmt.Errorf("build %s: %w", LocalizedTextTableName, err)

@@ -59,7 +59,7 @@ func (s DefinitionStore) SyncProjection(ctx context.Context, snapshot metadatasd
 			return err
 		}
 		if snapshot.Owner == metadatasdk.DefinitionOwnerMetadata {
-			return s.syncLocalizedTextRows(ctx, executor, snapshot.SourceKind, snapshot.SourceID, snapshot.LocalizedText, time.Now().UTC().Format(time.RFC3339Nano))
+			return s.syncLocalizedTextRows(ctx, executor, snapshot.SourceKind, snapshot.SourceID, snapshot.LocalizedText, time.Now().UTC().UnixMilli())
 		}
 		return nil
 	}

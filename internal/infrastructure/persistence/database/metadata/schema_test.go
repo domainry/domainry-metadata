@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	shareddefinition "github.com/domainry/domainry-foundation/definition"
 	"github.com/domainry/domainry-foundation/schemaownership"
@@ -145,11 +146,11 @@ func TestLocalizedTextSourceReplacementCannotDeleteAnotherWorkspace(t *testing.T
 		{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "a", Property: "name", Locale: "en-US", Text: "A"},
 		{WorkspaceID: "workspace-b", EntityType: "object", EntityKey: "b", Property: "name", Locale: "en-US", Text: "B"},
 	}
-	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", first, "2026-09-03T00:00:00Z"); err != nil {
+	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", first, time.Date(2026, 9, 3, 0, 0, 0, 0, time.UTC).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	second := []metadatasdk.LocalizedText{{WorkspaceID: "workspace-a", EntityType: "object", EntityKey: "a2", Property: "name", Locale: "en-US", Text: "A2"}}
-	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", second, "2026-09-03T00:00:01Z"); err != nil {
+	if err := store.syncLocalizedTextRows(t.Context(), store.database, "generated", "manifest", second, time.Date(2026, 9, 3, 0, 0, 1, 0, time.UTC).UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	workspaceA, err := store.ListLocalizedTexts(t.Context(), metadatasdk.LocalizedTextQuery{WorkspaceID: "workspace-a"})
