@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/domainry/domainry-foundation/modulehttp"
+	"github.com/domainry/domainry-foundation/telemetry"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
@@ -288,6 +289,7 @@ func writeMetadataError(writer http.ResponseWriter, err error) {
 			code = sdkError.Code
 		}
 	}
+	telemetry.RecordHTTPStatusError(writer, status, code)
 	writer.Header().Set("Cache-Control", "no-store")
 	writeMetadataJSON(writer, status, map[string]any{
 		"error": code, "code": code, "message": code, "message_key": code,
