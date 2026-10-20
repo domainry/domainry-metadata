@@ -289,7 +289,7 @@ func writeMetadataError(writer http.ResponseWriter, err error) {
 			code = sdkError.Code
 		}
 	}
-	telemetry.RecordHTTPStatusError(writer, status, code)
+	telemetry.RecordHTTPStatusError(writer, status, code, err)
 	writer.Header().Set("Cache-Control", "no-store")
 	writeMetadataJSON(writer, status, map[string]any{
 		"error": code, "code": code, "message": code, "message_key": code,
