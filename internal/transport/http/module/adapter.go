@@ -13,8 +13,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/modulehttp"
-	"github.com/domainry/domainry-foundation/telemetry"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
 	metadataapplication "github.com/domainry/domainry-metadata/internal/application/metadata"
@@ -289,12 +289,8 @@ func writeMetadataError(writer http.ResponseWriter, err error) {
 			code = sdkError.Code
 		}
 	}
-	telemetry.RecordHTTPStatusError(writer, status, code, err)
 	writer.Header().Set("Cache-Control", "no-store")
-	writeMetadataJSON(writer, status, map[string]any{
-		"error": code, "code": code, "message": code, "message_key": code,
-		"params": map[string]string{},
-	})
+	httpresponse.WriteError(writer, nil, httpresponse.Failure{Status: status, Code: code, Cause: err})
 }
 
 func writeMetadataCachedJSON(writer http.ResponseWriter, request *http.Request, value any) {
@@ -315,9 +311,7 @@ func writeMetadataCachedJSON(writer http.ResponseWriter, request *http.Request, 
 }
 
 func writeMetadataJSON(writer http.ResponseWriter, status int, value any) {
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(value)
+	httpresponse.WriteJSON(writer, status, value)
 }
 
 var localizedTextColumns = []string{"workspace_id", "entity_type", "entity_key", "property", "locale", "text"}

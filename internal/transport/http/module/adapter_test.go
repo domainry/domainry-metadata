@@ -2,6 +2,7 @@ package modulehttptransport
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	actioncontract "github.com/domainry/domainry-foundation/action"
+	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
 	metadatasdk "github.com/domainry/domainry-metadata-sdk"
@@ -104,10 +106,9 @@ func TestSurfaceHandlersRejectMissingPrincipalBeforeCallingBusinessPorts(t *test
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("path=%s status=%d body=%s", path, response.Code, response.Body.String())
 		}
-		for _, field := range []string{`"error":"auth.permission_denied"`, `"message_key":"auth.permission_denied"`, `"params":{}`} {
-			if !strings.Contains(response.Body.String(), field) {
-				t.Fatalf("path=%s error contract missing %s: %s", path, field, response.Body.String())
-			}
+		var failure httpresponse.ErrorResponse
+		if err := json.Unmarshal(response.Body.Bytes(), &failure); err != nil || failure.Code != "auth.permission_denied" || failure.Message == "" {
+			t.Fatalf("path=%s error contract invalid: %+v err=%v", path, failure, err)
 		}
 	}
 	if definitions.getCalls != 0 {
