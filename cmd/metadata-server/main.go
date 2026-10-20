@@ -4,13 +4,24 @@
 package main
 
 import (
-	"fmt"
+	"context"
 	"os"
 
+	"github.com/domainry/domainry-foundation/processhost"
 	metadataassembly "github.com/domainry/domainry-metadata/internal/assembly/saas"
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, metadataassembly.ErrNotSupported)
-	os.Exit(1)
+	if run() != nil {
+		os.Exit(1)
+	}
+}
+
+func run() (runErr error) {
+	host, err := processhost.Open(context.Background(), processhost.Config{ServiceName: "domainry-metadata"})
+	if err != nil {
+		return err
+	}
+	defer func() { runErr = host.Finish(context.Background(), nil, runErr) }()
+	return metadataassembly.ErrNotSupported
 }
