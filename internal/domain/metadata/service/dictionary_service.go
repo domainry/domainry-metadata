@@ -35,21 +35,21 @@ func (s *DictionaryService) Items(ctx context.Context, query metadatasdk.Diction
 	query.DictionaryKey = strings.TrimSpace(query.DictionaryKey)
 	query.Locale = strings.TrimSpace(query.Locale)
 	if query.WorkspaceID == "" {
-		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{StatusCode: 400, Code: "metadata.workspace_required"}
+		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.workspace_required"}
 	}
 	if query.DictionaryKey == "" {
-		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{StatusCode: 400, Code: "backend.dictionary.missing_key"}
+		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "backend.dictionary.missing_key"}
 	}
 	definition, found, err := s.definitions.Get(ctx, metadatasdk.DefinitionOwnerMetadata, "dictionary", query.DictionaryKey)
 	if err != nil {
 		return metadatasdk.DictionaryItems{}, err
 	}
 	if !found {
-		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{StatusCode: 404, Code: "backend.dictionary.not_found"}
+		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindNotFound, Code: "backend.dictionary.not_found"}
 	}
 	var dictionary metadatasdk.Dictionary
 	if err := json.Unmarshal(definition.Payload, &dictionary); err != nil {
-		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{StatusCode: 500, Code: "metadata.dictionary_definition_invalid", Cause: err}
+		return metadatasdk.DictionaryItems{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindInternal, Code: "metadata.dictionary_definition_invalid", Cause: err}
 	}
 	version := dictionaryVersion(definition.SchemaHash, dictionary)
 	cacheKey := query.WorkspaceID + "\x00" + query.DictionaryKey + "\x00" + query.Locale

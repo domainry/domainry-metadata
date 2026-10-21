@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/domainry/domainry-foundation/apperror"
 	"github.com/domainry/domainry-foundation/httpresponse"
 	"github.com/domainry/domainry-foundation/modulehttp"
 	identitysdk "github.com/domainry/domainry-identity-sdk"
@@ -108,7 +109,7 @@ func (h *metadataHandler) handlers() map[string]http.HandlerFunc {
 func (h *metadataHandler) listDefinitions(writer http.ResponseWriter, request *http.Request) {
 	principal, ok := metadataPrincipal(request, metadatasdk.ActionMetadataDefinitionsList)
 	if !ok || !sameWorkspace(request.URL.Query().Get("workspace_id"), principal.WorkspaceID) {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return
 	}
 	resourceType := strings.TrimSpace(request.PathValue("resourceType"))
@@ -122,7 +123,7 @@ func (h *metadataHandler) listDefinitions(writer http.ResponseWriter, request *h
 
 func (h *metadataHandler) getDefinition(writer http.ResponseWriter, request *http.Request) {
 	if _, ok := metadataPrincipal(request, metadatasdk.ActionMetadataDefinitionsGet); !ok {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return
 	}
 	value, found, err := h.definitions.Get(request.Context(), metadatasdk.DefinitionOwnerMetadata, strings.TrimSpace(request.PathValue("resourceType")), strings.TrimSpace(request.PathValue("resourceKey")))
@@ -131,7 +132,7 @@ func (h *metadataHandler) getDefinition(writer http.ResponseWriter, request *htt
 		return
 	}
 	if !found {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 404, Code: "backend.metadata.definition_not_found"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindNotFound, Code: "backend.metadata.definition_not_found"})
 		return
 	}
 	writeMetadataCachedJSON(writer, request, value)
@@ -140,7 +141,7 @@ func (h *metadataHandler) getDefinition(writer http.ResponseWriter, request *htt
 func (h *metadataHandler) listLocalizedTexts(writer http.ResponseWriter, request *http.Request) {
 	query, ok := localizedTextQuery(request, metadatasdk.ActionMetadataLocalizedTextsList)
 	if !ok {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return
 	}
 	values, err := h.localization.List(request.Context(), query)
@@ -154,7 +155,7 @@ func (h *metadataHandler) listLocalizedTexts(writer http.ResponseWriter, request
 func (h *metadataHandler) localizedTextCoverage(writer http.ResponseWriter, request *http.Request) {
 	principal, ok := metadataPrincipal(request, metadatasdk.ActionMetadataLocalizedTextsCoverage)
 	if !ok {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return
 	}
 	result, err := h.localization.Coverage(request.Context(), metadatasdk.LocalizedTextCoverageQuery{
@@ -192,7 +193,7 @@ func (h *metadataHandler) exportLocalizedTextsXLSX(writer http.ResponseWriter, r
 func (h *metadataHandler) exportValues(writer http.ResponseWriter, request *http.Request, actionKey string) ([]metadatasdk.LocalizedText, bool) {
 	query, ok := localizedTextQuery(request, actionKey)
 	if !ok {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return nil, false
 	}
 	values, err := h.localization.List(request.Context(), query)
@@ -206,7 +207,7 @@ func (h *metadataHandler) exportValues(writer http.ResponseWriter, request *http
 func (h *metadataHandler) dictionaryItems(writer http.ResponseWriter, request *http.Request) {
 	principal, ok := metadataPrincipal(request, "")
 	if !ok {
-		writeMetadataError(writer, &metadatasdk.Error{StatusCode: 403, Code: "auth.permission_denied"})
+		writeMetadataError(writer, &metadatasdk.Error{Kind: metadatasdk.ErrorKindForbidden, Code: "auth.permission_denied"})
 		return
 	}
 	result, err := h.dictionaries.Items(request.Context(), metadatasdk.DictionaryItemsQuery{WorkspaceID: principal.WorkspaceID, DictionaryKey: strings.TrimSpace(request.PathValue("dictionaryKey")), Locale: strings.TrimSpace(request.URL.Query().Get("locale"))})
@@ -282,15 +283,32 @@ func writeMetadataError(writer http.ResponseWriter, err error) {
 	status, code := http.StatusInternalServerError, "backend.metadata.internal"
 	var sdkError *metadatasdk.Error
 	if errors.As(err, &sdkError) {
-		if sdkError.StatusCode > 0 {
-			status = sdkError.StatusCode
-		}
+		status = metadataErrorHTTPStatus(apperror.KindOf(sdkError))
 		if strings.TrimSpace(sdkError.Code) != "" {
 			code = sdkError.Code
 		}
 	}
 	writer.Header().Set("Cache-Control", "no-store")
 	httpresponse.WriteError(writer, nil, httpresponse.Failure{Status: status, Code: code, Cause: err})
+}
+
+func metadataErrorHTTPStatus(kind apperror.ErrorKind) int {
+	switch kind {
+	case apperror.KindBadRequest:
+		return http.StatusBadRequest
+	case apperror.KindForbidden:
+		return http.StatusForbidden
+	case apperror.KindNotFound:
+		return http.StatusNotFound
+	case apperror.KindConflict:
+		return http.StatusConflict
+	case apperror.KindRateLimited:
+		return http.StatusTooManyRequests
+	case apperror.KindUnavailable:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusInternalServerError
+	}
 }
 
 func writeMetadataCachedJSON(writer http.ResponseWriter, request *http.Request, value any) {

@@ -30,10 +30,10 @@ func (s *LocalizationApplicationService) Coverage(ctx context.Context, query met
 	query.Locale = strings.TrimSpace(query.Locale)
 	query.FallbackLocale = strings.TrimSpace(query.FallbackLocale)
 	if query.WorkspaceID == "" {
-		return metadatasdk.LocalizedTextCoverage{}, &metadatasdk.Error{StatusCode: 400, Code: "metadata.workspace_required"}
+		return metadatasdk.LocalizedTextCoverage{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.workspace_required"}
 	}
 	if query.Locale == "" {
-		return metadatasdk.LocalizedTextCoverage{}, &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_texts.locale_required"}
+		return metadatasdk.LocalizedTextCoverage{}, &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.localized_texts.locale_required"}
 	}
 	if query.FallbackLocale == query.Locale {
 		query.FallbackLocale = ""

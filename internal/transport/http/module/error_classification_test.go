@@ -18,20 +18,20 @@ func (capture *classificationCapture) RecordError(kind, code string) {
 
 func TestMetadataErrorClassificationMatrix(t *testing.T) {
 	tests := []struct {
-		status int
-		kind   string
-		code   string
+		class metadatasdk.ErrorKind
+		kind  string
+		code  string
 	}{
-		{503, "unavailable", "backend.metadata.database_unavailable"},
-		{409, "conflict", "backend.metadata.publication_fence_rejected"},
-		{400, "bad_request", "backend.metadata.definition_invalid"},
-		{403, "forbidden", "backend.metadata.permission_denied"},
+		{metadatasdk.ErrorKindUnavailable, "unavailable", "backend.metadata.database_unavailable"},
+		{metadatasdk.ErrorKindConflict, "conflict", "backend.metadata.publication_fence_rejected"},
+		{metadatasdk.ErrorKindBadRequest, "bad_request", "backend.metadata.definition_invalid"},
+		{metadatasdk.ErrorKindForbidden, "forbidden", "backend.metadata.permission_denied"},
 	}
 	for _, test := range tests {
 		capture := &classificationCapture{ResponseRecorder: httptest.NewRecorder()}
-		writeMetadataError(capture, &metadatasdk.Error{StatusCode: test.status, Code: test.code})
+		writeMetadataError(capture, &metadatasdk.Error{Kind: test.class, Code: test.code})
 		if capture.kind != test.kind || capture.code != test.code {
-			t.Fatalf("status=%d kind=%q code=%q", test.status, capture.kind, capture.code)
+			t.Fatalf("class=%q kind=%q code=%q", test.class, capture.kind, capture.code)
 		}
 	}
 }

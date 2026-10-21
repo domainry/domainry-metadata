@@ -198,7 +198,7 @@ func TestPublicModuleProjectionRoundTripTransactionReplayAndReopen(t *testing.T)
 	}
 	err = binding.Projection().Sync(t.Context(), projectionSnapshot("1", "Rewritten customer"))
 	var versionConflict *metadatasdk.Error
-	if !errors.As(err, &versionConflict) || versionConflict.StatusCode != http.StatusConflict || versionConflict.Code != "backend.metadata.definition_version_conflict" {
+	if !errors.As(err, &versionConflict) || versionConflict.Kind != metadatasdk.ErrorKindConflict || versionConflict.Code != "backend.metadata.definition_version_conflict" {
 		t.Fatalf("historical version rewrite error=%v", err)
 	}
 	definition, found, err := binding.Definitions().Get(t.Context(), metadatasdk.DefinitionOwnerMetadata, "object", "customer")
@@ -284,7 +284,7 @@ func TestPublicModuleRejectsConcurrentDefinitionVersionConflict(t *testing.T) {
 			continue
 		}
 		var metadataError *metadatasdk.Error
-		if errors.As(err, &metadataError) && metadataError.StatusCode == http.StatusConflict && metadataError.Code == "backend.metadata.definition_version_conflict" {
+		if errors.As(err, &metadataError) && metadataError.Kind == metadatasdk.ErrorKindConflict && metadataError.Code == "backend.metadata.definition_version_conflict" {
 			conflicts++
 			continue
 		}

@@ -37,14 +37,14 @@ func (s DefinitionStore) SyncProjection(ctx context.Context, snapshot metadatasd
 		return err
 	}
 	if strings.TrimSpace(snapshot.Owner) == "" || strings.TrimSpace(snapshot.SchemaVersion) == "" || strings.TrimSpace(snapshot.SourceKind) == "" || strings.TrimSpace(snapshot.SourceID) == "" {
-		return &metadatasdk.Error{StatusCode: 400, Code: "metadata.projection_identity_required"}
+		return &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.projection_identity_required"}
 	}
 	snapshot.Owner = strings.TrimSpace(snapshot.Owner)
 	snapshot.SchemaVersion = strings.TrimSpace(snapshot.SchemaVersion)
 	snapshot.SourceKind = strings.TrimSpace(snapshot.SourceKind)
 	snapshot.SourceID = strings.TrimSpace(snapshot.SourceID)
 	if snapshot.Owner != metadatasdk.DefinitionOwnerMetadata && len(snapshot.LocalizedText) > 0 {
-		return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_owner_invalid"}
+		return &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.localized_text_owner_invalid"}
 	}
 	if snapshot.Owner == metadatasdk.DefinitionOwnerMetadata {
 		snapshot.Definitions = append(snapshot.Definitions, projectionApplicationDefinition(snapshot))
@@ -97,7 +97,7 @@ func projectionApplicationDefinition(snapshot metadatasdk.ProjectionSnapshot) me
 
 func (s DefinitionStore) validate() error {
 	if s.database == nil || s.dialect == nil || s.writeMu == nil {
-		return &metadatasdk.Error{StatusCode: 503, Code: "metadata.store_unavailable"}
+		return &metadatasdk.Error{Kind: metadatasdk.ErrorKindUnavailable, Code: "metadata.store_unavailable"}
 	}
 	return nil
 }

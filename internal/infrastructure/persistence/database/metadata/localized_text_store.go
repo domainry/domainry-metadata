@@ -24,7 +24,7 @@ func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatas
 	snapshot.SourceKind = strings.TrimSpace(snapshot.SourceKind)
 	snapshot.SourceID = strings.TrimSpace(snapshot.SourceID)
 	if snapshot.WorkspaceID == "" || snapshot.EntityType == "" || snapshot.EntityKey == "" || snapshot.SourceKind == "" || snapshot.SourceID == "" {
-		return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_projection_identity_required"}
+		return &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.localized_text_projection_identity_required"}
 	}
 	values := make([]metadatasdk.LocalizedText, 0, len(snapshot.Values))
 	for _, value := range snapshot.Values {
@@ -35,7 +35,7 @@ func (s DefinitionStore) ReplaceResource(ctx context.Context, snapshot metadatas
 		value.SourceKind = snapshot.SourceKind
 		value.SourceID = snapshot.SourceID
 		if value.Property == "" || value.Locale == "" || value.Text == "" {
-			return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_invalid"}
+			return &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.localized_text_invalid"}
 		}
 		values = append(values, value)
 	}
@@ -108,7 +108,7 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 	for _, value := range values {
 		value = normalizeLocalizedText(value)
 		if value.WorkspaceID == "" || value.EntityType == "" || value.EntityKey == "" || value.Property == "" || value.Locale == "" || value.Text == "" {
-			return &metadatasdk.Error{StatusCode: 400, Code: "metadata.localized_text_invalid"}
+			return &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.localized_text_invalid"}
 		}
 		value.SourceKind, value.SourceID = sourceKind, sourceID
 		byWorkspace[value.WorkspaceID] = append(byWorkspace[value.WorkspaceID], value)
@@ -198,7 +198,7 @@ func (s DefinitionStore) ListLocalizedTexts(ctx context.Context, queryValue meta
 func (s DefinitionStore) localizedTextListStatement(queryValue metadatasdk.LocalizedTextQuery) (string, []any, error) {
 	queryValue.WorkspaceID = strings.TrimSpace(queryValue.WorkspaceID)
 	if queryValue.WorkspaceID == "" {
-		return "", nil, &metadatasdk.Error{StatusCode: 400, Code: "metadata.workspace_required"}
+		return "", nil, &metadatasdk.Error{Kind: metadatasdk.ErrorKindBadRequest, Code: "metadata.workspace_required"}
 	}
 	predicates := []query.Predicate{}
 	add := func(column, value string) {
