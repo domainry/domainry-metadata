@@ -50,11 +50,17 @@ func TestSchemaOwnershipMatchesEveryFreshMetadataTableAndPrimaryKey(t *testing.T
 		if !found {
 			t.Fatalf("Metadata table %s has ownership but no canonical DDL", table.Name)
 		}
+		if !slices.Equal(table.PrimaryKey, []string{"id"}) {
+			t.Fatalf("Metadata table %s physical primary key=%v want [id]", table.Name, table.PrimaryKey)
+		}
+		if !strings.Contains(statement, `"id" INTEGER PRIMARY KEY AUTOINCREMENT`) {
+			t.Fatalf("Metadata table %s has no SQLite BIGINT physical auto-increment ID: %s", table.Name, statement)
+		}
 		quoted := make([]string, len(table.PrimaryKey))
 		for index, column := range table.PrimaryKey {
 			quoted[index] = `"` + column + `"`
 		}
-		if primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"; !strings.Contains(statement, primaryKey) {
+		if primaryKey := "PRIMARY KEY (" + strings.Join(quoted, ", ") + ")"; !strings.Contains(statement, primaryKey) && !strings.Contains(statement, `"id" INTEGER PRIMARY KEY AUTOINCREMENT`) {
 			t.Fatalf("Metadata table %s ownership primary key %v does not match DDL: %s", table.Name, table.PrimaryKey, statement)
 		}
 	}

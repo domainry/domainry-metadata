@@ -2,9 +2,7 @@ package metadata
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"sort"
 	"strings"
 	"time"
@@ -68,12 +66,12 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 	}
 	for _, value := range values {
 		identity := localizedTextIdentity(value)
-		lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Columns("id").Where(identity).Build()
+		lookup, lookupArgs, err := query.NewWorkspaceSelectBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Columns("entity_type").Where(identity).Build()
 		if err != nil {
 			return err
 		}
-		var existingID string
-		lookupErr := executor.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingID)
+		var existingEntityType string
+		lookupErr := executor.QueryRowContext(ctx, lookup, lookupArgs...).Scan(&existingEntityType)
 		if lookupErr != nil && lookupErr != sql.ErrNoRows {
 			return lookupErr
 		}
@@ -90,8 +88,8 @@ func (s DefinitionStore) replaceLocalizedTextResource(ctx context.Context, execu
 			continue
 		}
 		insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, LocalizedTextTableName, snapshot.WorkspaceID).Columns(
-			"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
-		).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, snapshot.SourceKind, snapshot.SourceID, now, now).Build()
+			"entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
+		).Values(value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, snapshot.SourceKind, snapshot.SourceID, now, now).Build()
 		if err != nil {
 			return err
 		}
@@ -155,8 +153,8 @@ func (s DefinitionStore) syncLocalizedTextRows(ctx context.Context, executor mod
 				continue
 			}
 			insert, insertArgs, err := query.NewWorkspaceInsertBuilder(s.dialect, LocalizedTextTableName, workspaceID).Columns(
-				"id", "entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
-			).Values(localizedTextID(value), value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, sourceKind, sourceID, now, now).Build()
+				"entity_type", "entity_key", "property", "locale", "text", "source_kind", "source_id", "created_at", "updated_at",
+			).Values(value.EntityType, value.EntityKey, value.Property, value.Locale, value.Text, sourceKind, sourceID, now, now).Build()
 			if err != nil {
 				return err
 			}
@@ -233,9 +231,4 @@ func normalizeLocalizedText(value metadatasdk.LocalizedText) metadatasdk.Localiz
 
 func localizedTextIdentity(value metadatasdk.LocalizedText) query.Predicate {
 	return query.And(query.Equal("entity_type", value.EntityType), query.Equal("entity_key", value.EntityKey), query.Equal("property", value.Property), query.Equal("locale", value.Locale))
-}
-
-func localizedTextID(value metadatasdk.LocalizedText) string {
-	sum := sha256.Sum256([]byte(value.WorkspaceID + "\x00" + value.EntityType + "\x00" + value.EntityKey + "\x00" + value.Property + "\x00" + value.Locale))
-	return "localized:" + hex.EncodeToString(sum[:16])
 }

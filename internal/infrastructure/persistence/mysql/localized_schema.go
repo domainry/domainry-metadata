@@ -20,6 +20,10 @@ func LocalizedTable(d modulehost.Dialect, statement string) string {
 	}
 	old := "UNIQUE (" + strings.Join(quoted, ", ") + ")"
 	hash := d.Identifier("natural_key_sha256")
-	generated := hash + " BINARY(32) GENERATED ALWAYS AS (UNHEX(SHA2(CONCAT(" + strings.Join(parts, ", ") + "), 256))) STORED, UNIQUE (" + hash + ")"
-	return strings.Replace(statement, old, generated, 1)
+	generated := hash + " BINARY(32) GENERATED ALWAYS AS (UNHEX(SHA2(CONCAT(" + strings.Join(parts, ", ") + "), 256))) STORED"
+	statement = strings.Replace(statement, old, "UNIQUE ("+hash+")", 1)
+	// The generated natural-key value is business-key storage, not an audit
+	// field. Keep it before the canonical created/updated timestamps.
+	audit := d.Identifier("created_at") + " "
+	return strings.Replace(statement, audit, generated+", "+audit, 1)
 }
