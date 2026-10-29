@@ -39,10 +39,32 @@ func metadataRoleAction(key, capabilityKey, capabilityLabel, pattern, label stri
 	separator := strings.LastIndex(key, ".")
 	definition.Authorization = actioncontract.Authorization{Strategy: actioncontract.AuthorizationAuthenticated}
 	definition.Permission = &actioncontract.PermissionDefinition{
-		Key: key, Owner: AuthorizationOwner, ResourceKey: key[:separator], OperationKey: key[separator+1:],
-		Label: label, Category: capabilityLabel, LifecycleStatus: actioncontract.LifecycleActive,
+		Key: key, Owner: AuthorizationOwner, ModuleKey: "metadata", GroupKey: capabilityKey,
+		ResourceKey: key[:separator], OperationKey: key[separator+1:], Label: label, Category: capabilityLabel,
+		GrantMode: actioncontract.PermissionGrantInternal, ScopeKind: actioncontract.PermissionScopeNone,
+		DefaultLocale: "en", I18n: metadataPermissionText(capabilityKey, key[:separator], key[separator+1:], label),
+		LifecycleStatus: actioncontract.LifecycleActive,
 	}
 	return definition
+}
+
+func metadataPermissionText(capabilityKey, resourceKey, operationKey, englishLabel string) actioncontract.PermissionLocalizedText {
+	groupEnglish := map[string]string{
+		metadatasdk.CapabilityMetadataDefinitions:  "Metadata definitions",
+		metadatasdk.CapabilityMetadataLocalization: "Metadata localization",
+	}[capabilityKey]
+	groupChinese := map[string]string{
+		metadatasdk.CapabilityMetadataDefinitions:  "元数据定义",
+		metadatasdk.CapabilityMetadataLocalization: "本地化管理",
+	}[capabilityKey]
+	resourceEnglish := map[string]string{"metadata.definitions": "Metadata definitions", "metadata.localized_texts": "Localized texts"}[resourceKey]
+	resourceChinese := map[string]string{"metadata.definitions": "元数据定义", "metadata.localized_texts": "本地化文案"}[resourceKey]
+	operationEnglish := map[string]string{"list": "List", "get": "View details", "coverage": "View coverage", "export_csv": "Export CSV", "export_xlsx": "Export Excel"}[operationKey]
+	operationChinese := map[string]string{"list": "查看列表", "get": "查看详情", "coverage": "查看覆盖率", "export_csv": "导出 CSV", "export_xlsx": "导出 Excel"}[operationKey]
+	return actioncontract.PermissionLocalizedText{
+		"en":    {ModuleLabel: "Metadata", GroupLabel: groupEnglish, ResourceLabel: resourceEnglish, OperationLabel: operationEnglish, Label: englishLabel, Description: "Provides access to " + resourceEnglish + " for the “" + operationEnglish + "” operation."},
+		"zh-CN": {ModuleLabel: "元数据", GroupLabel: groupChinese, ResourceLabel: resourceChinese, OperationLabel: operationChinese, Label: resourceChinese + " · " + operationChinese, Description: "允许对“" + resourceChinese + "”执行“" + operationChinese + "”操作。"},
+	}
 }
 
 func metadataAuthenticatedAction(key, capabilityKey, capabilityLabel, pattern, label string) actioncontract.ActionDefinition {
